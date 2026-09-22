@@ -1,0 +1,8 @@
+name = "boxcraft-guardrail"
+main = "src/index.ts"
+compatibility_date = "2026-09-22"
+
+# Bindings (uncomment and fill in once provisioned):
+# [[kv_namespaces]]
+# binding = "LOCATION_BITMAP"
+# id = ""
