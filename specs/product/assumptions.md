@@ -206,14 +206,24 @@ succeeded, and cleaning up the stored token on `app/uninstalled`.
    Workers project if it isn't picked up automatically from
    `wrangler.toml` on the next deploy.
 2. **Deploy `workers/webhook-consumer` and `workers/app-backend`, create
-   the `SHOP_TOKENS` namespace, and set all three secrets** —
+   the `SHOP_TOKENS` namespace, and set both Workers' secrets** —
    `scripts/setup-cloudflare.mjs` automates this entire step. Run
-   `npx wrangler login` locally, then:
+   `npx wrangler login` locally, then either:
    ```
-   SHOPIFY_CLIENT_SECRET=... SHOPIFY_WEBHOOK_SECRET=... \
-     node scripts/setup-cloudflare.mjs
+   ./scripts/setup-cloudflare.sh          # prompts for the secret, masked
    ```
-   It creates the KV namespace, sets secrets, direct-deploys both
+   or
+   ```
+   SHOPIFY_CLIENT_SECRET=... node scripts/setup-cloudflare.mjs
+   ```
+   Only one secret is needed — the app's client secret from the Partner
+   Dashboard (your app → Client credentials). It can't be generated or
+   fetched by a script; Shopify only ever shows it there. The webhook
+   signing secret isn't asked for separately: standard TOML-declared
+   webhook subscriptions (what this app uses) are signed with the client
+   secret, so the script reuses it automatically unless
+   `SHOPIFY_WEBHOOK_SECRET` is explicitly set to something else.
+   The script creates the KV namespace, sets secrets, direct-deploys both
    Workers (this creates them on the account even without a Git-connected
    Workers Build project), and wires the resulting app-backend URL into
    both `workers/app-backend/wrangler.toml` and `shopify.app.toml`
