@@ -156,13 +156,17 @@ against a real Shopify store or live Cloudflare resources.**
    `SHOPIFY_WEBHOOK_SECRET` set via
    `npx wrangler secret put SHOPIFY_WEBHOOK_SECRET`.
 3. ~~Register a Shopify Partner app.~~ **Partially done** — real
-   `client_id` (`d3f114303ecd6de5e650b4bdb96106f6`) is now in
-   `shopify.app.toml`. Still needed: `application_url`,
-   `dev_store_url`, and the auth redirect URL are still placeholders
-   (need a hosted app URL and the dev store's real `.myshopify.com`
-   handle), and the Cart Transform function's runtime adapter shape in
-   `run.ts` still needs verification against a real
-   `shopify app generate extension` scaffold or `shopify app deploy`.
+   `client_id` (`d3f114303ecd6de5e650b4bdb96106f6`) and `dev_store_url`
+   (`box-craft-demo.myshopify.com`) are now in `shopify.app.toml`. Still
+   needed, and explicitly **deferred by the user for now** (see task #16
+   in the task list): `application_url` and the auth redirect URL, which
+   require deciding whether to build a real app-backend service (OAuth
+   install flow, embedded admin UI, `AppSubscription` billing calls — none
+   of which exist in this codebase yet) or rely on `shopify app dev`'s
+   local tunnel while still in the design-partner stage. Also still open:
+   the Cart Transform function's runtime adapter shape in `run.ts` needs
+   verification against a real `shopify app generate extension` scaffold
+   or `shopify app deploy`.
 4. **Set up a dev store with 2+ locations** with split inventory to
    actually exercise the full/partial/zero-overlap guardrail scenarios —
    nothing here has been checked against real Shopify inventory data yet.
