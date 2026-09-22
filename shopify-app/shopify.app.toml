@@ -8,7 +8,7 @@
 client_id = "d3f114303ecd6de5e650b4bdb96106f6"
 name = "BoxCraft"
 handle = "boxcraft"
-application_url = "https://REPLACE_WITH_APP_URL"
+application_url = "https://box-craft-app-backend.adam-bourg.workers.dev"
 embedded = true
 
 [build]
@@ -30,4 +30,4 @@ api_version = "2026-01"
 scopes = "read_inventory,read_locations,read_products"
 
 [auth]
-redirect_urls = [ "https://REPLACE_WITH_APP_URL/auth/callback" ]
+redirect_urls = [ "https://box-craft-app-backend.adam-bourg.workers.dev/auth/callback" ]

@@ -8,16 +8,16 @@ SHOPIFY_SCOPES = "read_inventory,read_locations,read_products"
 # Set once this Worker has a real deployed URL (same value that then goes
 # into shopify.app.toml's application_url). Placeholder until then — see
 # specs/product/assumptions.md.
-APP_URL = "https://REPLACE_WITH_APP_URL"
+APP_URL = "https://box-craft-app-backend.adam-bourg.workers.dev"
 
 # Stores {shop -> access token} after install. A separate namespace from
 # the Guardrail Worker's LOCATION_BITMAP — different sensitivity (this
 # holds merchant secrets), different lifecycle. Not yet provisioned in
 # this environment. Create with:
 #   npx wrangler kv namespace create SHOP_TOKENS
-# [[kv_namespaces]]
-# binding = "SHOP_TOKENS"
-# id = ""
+[[kv_namespaces]]
+binding = "SHOP_TOKENS"
+id = "0a36a18ea3344074a5bec4e4c2575f1e"
 
 # Set with:
 #   npx wrangler secret put SHOPIFY_CLIENT_SECRET
