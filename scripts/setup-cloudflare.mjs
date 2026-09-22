@@ -125,32 +125,18 @@ if (hasActiveBinding) {
 	log("kv", `Wired namespace id ${namespaceId} into workers/app-backend/wrangler.toml`);
 }
 
-// --- Step 2: secrets -----------------------------------------------------
-
-function putSecret(dir, name, value) {
-	log("secret", `Setting ${name} on ${path.relative(repoRoot, dir)}...`);
-	const result = spawnSync("npx", ["wrangler", "secret", "put", name], {
-		cwd: dir,
-		input: value,
-		encoding: "utf8",
-	});
-	if (result.status !== 0) {
-		console.error(result.stdout ?? "");
-		console.error(result.stderr ?? "");
-		fail(`Failed to set ${name} on ${dir}`);
-	}
-}
-
-putSecret(webhookConsumerDir, "SHOPIFY_WEBHOOK_SECRET", webhookSecret);
-putSecret(appBackendDir, "SHOPIFY_CLIENT_SECRET", clientSecret);
-putSecret(appBackendDir, "SHOPIFY_WEBHOOK_SECRET", webhookSecret);
-
-// --- Step 3: deploy webhook-consumer -------------------------------------
+// --- Step 2: deploy webhook-consumer (bare, no secrets yet) --------------
+//
+// Secrets have to come after the first deploy: `wrangler secret put`
+// attaches a secret to the Worker's "currently deployed" version, and a
+// brand-new Worker has no deployed version yet to attach to. Deploying
+// first (even without secrets set — they'll just read as undefined until
+// the secret step below) resolves that.
 
 log("deploy", "Deploying webhook-consumer...");
 console.log(run("npx", ["wrangler", "deploy"], { cwd: webhookConsumerDir }));
 
-// --- Step 4: deploy app-backend, capture its URL -------------------------
+// --- Step 3: deploy app-backend, capture its URL -------------------------
 
 log("deploy", "Deploying app-backend...");
 const deployOutput = run("npx", ["wrangler", "deploy"], { cwd: appBackendDir });
@@ -168,7 +154,7 @@ if (!urlMatch) {
 const appUrl = urlMatch[0];
 log("url", `Deployed app-backend at ${appUrl}`);
 
-// --- Step 5: wire the real URL into config -------------------------------
+// --- Step 4: wire the real URL into config -------------------------------
 
 appBackendToml = readFileSync(appBackendWranglerToml, "utf8");
 appBackendToml = appBackendToml.replace(
@@ -189,10 +175,34 @@ appToml = appToml.replace(
 writeFileSync(shopifyAppToml, appToml);
 log("config", "Updated APP_URL in wrangler.toml and application_url/redirect_urls in shopify.app.toml");
 
-// --- Step 6: redeploy app-backend so it picks up the new APP_URL var ----
+// --- Step 5: redeploy app-backend so it picks up the new APP_URL var ----
 
 log("deploy", "Redeploying app-backend with the real APP_URL...");
 console.log(run("npx", ["wrangler", "deploy"], { cwd: appBackendDir }));
+
+// --- Step 6: secrets -------------------------------------------------------
+//
+// Both Workers now have a deployed version, so `wrangler secret put` can
+// attach to it (and auto-deploys the secret immediately — no extra
+// redeploy needed after this).
+
+function putSecret(dir, name, value) {
+	log("secret", `Setting ${name} on ${path.relative(repoRoot, dir)}...`);
+	const result = spawnSync("npx", ["wrangler", "secret", "put", name], {
+		cwd: dir,
+		input: value,
+		encoding: "utf8",
+	});
+	if (result.status !== 0) {
+		console.error(result.stdout ?? "");
+		console.error(result.stderr ?? "");
+		fail(`Failed to set ${name} on ${dir}`);
+	}
+}
+
+putSecret(webhookConsumerDir, "SHOPIFY_WEBHOOK_SECRET", webhookSecret);
+putSecret(appBackendDir, "SHOPIFY_CLIENT_SECRET", clientSecret);
+putSecret(appBackendDir, "SHOPIFY_WEBHOOK_SECRET", webhookSecret);
 
 // --- Summary ---------------------------------------------------------------
 
