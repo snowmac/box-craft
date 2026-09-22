@@ -10,14 +10,13 @@ class_name = "SkuDebouncer"
 tag = "v1"
 new_sqlite_classes = ["SkuDebouncer"]
 
-# Must be the SAME KV namespace id as the Guardrail Worker's
-# LOCATION_BITMAP binding (see ../../wrangler.toml) — this Worker also uses
-# it to read the inventory_item_id -> variant GID lookup the backfill
-# script populates (see shared/bitmap.ts inventoryItemMapKey). Not yet
-# provisioned in this environment — see specs/product/assumptions.md.
-# [[kv_namespaces]]
-# binding = "LOCATION_BITMAP"
-# id = ""
+# Same KV namespace id as the Guardrail Worker's LOCATION_BITMAP binding
+# (see ../../wrangler.toml) — this Worker also uses it to read the
+# inventory_item_id -> variant GID lookup the backfill script populates
+# (see shared/bitmap.ts inventoryItemMapKey).
+[[kv_namespaces]]
+binding = "LOCATION_BITMAP"
+id = "fd681a5957544826b82e98f16df52950"
 
 # Set with: npx wrangler secret put SHOPIFY_WEBHOOK_SECRET
 # (Shopify's webhook signing secret, from the app's Partner Dashboard

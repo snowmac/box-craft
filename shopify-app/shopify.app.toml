@@ -1,12 +1,11 @@
 # Hand-scaffolded to match the structure `shopify app init` generates.
-# This session has no Shopify Partner account access, so it can't run the
-# interactive CLI to register a real app — client_id and the URLs below
-# are placeholders. Once a Partner app exists (see
-# specs/product/assumptions.md), run `shopify app config link` from this
-# directory to pull the real values in, or fill them in by hand from the
-# Partner Dashboard.
+# client_id below is the real Partner app's client ID. application_url,
+# dev_store_url, and the auth redirect URL are still placeholders — fill
+# those in (or run `shopify app config link` from this directory) once
+# the app has a real hosted URL and dev store handle. See
+# specs/product/assumptions.md.
 
-client_id = "REPLACE_WITH_PARTNER_APP_CLIENT_ID"
+client_id = "d3f114303ecd6de5e650b4bdb96106f6"
 name = "BoxCraft"
 handle = "boxcraft"
 application_url = "https://REPLACE_WITH_APP_URL"

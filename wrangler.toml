@@ -2,14 +2,6 @@ name = "box-craft"
 main = "src/index.ts"
 compatibility_date = "2026-09-22"
 
-# Requires a KV namespace, not yet provisioned in this environment (no
-# Cloudflare credentials available here). Create one with:
-#   npx wrangler kv namespace create LOCATION_BITMAP
-# then uncomment below and fill in the id, or add the binding via the
-# Cloudflare dashboard (Workers & Pages > box-craft > Bindings > Add a
-# binding) and redeploy. Until this binding exists, /check always
-# fail-opens (compatible: true) rather than erroring — see
-# specs/product/assumptions.md.
-# [[kv_namespaces]]
-# binding = "LOCATION_BITMAP"
-# id = ""
+[[kv_namespaces]]
+binding = "LOCATION_BITMAP"
+id = "fd681a5957544826b82e98f16df52950"

@@ -135,8 +135,6 @@ against a real Shopify store or live Cloudflare resources.**
   KV namespace — written correctly per Shopify's current (non-deprecated)
   `quantities` API and Cloudflare's KV bulk-write REST endpoint, but never
   actually run.
-- **No shopify.app.toml `client_id`** — placeholder text, since there's no
-  Partner-registered app to pull a real one from.
 - **Billing, App Store submission, and Go-to-Market tasks** — not
   attempted. These need a Shopify Partner account, real merchant
   relationships, and business decisions (trial length, which subscription
@@ -145,23 +143,26 @@ against a real Shopify store or live Cloudflare resources.**
 
 ## Manual steps needed before any of this goes live
 
-1. **Provision the KV namespace.** Run
-   `npx wrangler kv namespace create LOCATION_BITMAP` (needs a
-   `wrangler login` this environment doesn't have), or create it via the
-   Cloudflare dashboard, then uncomment the `[[kv_namespaces]]` block in
-   both `wrangler.toml` files with the real namespace id, and add the
-   binding to both Workers' dashboard projects.
+1. ~~Provision the KV namespace.~~ **Done** — `LOCATION_BITMAP` namespace
+   id `fd681a5957544826b82e98f16df52950` is now wired into both
+   `wrangler.toml` files. Still needed: add the same binding via the
+   Cloudflare dashboard (Bindings → Add binding) on the `box-craft`
+   Workers project if it isn't picked up automatically from
+   `wrangler.toml` on the next deploy.
 2. **Create a second Cloudflare Workers Build project** for
    `workers/webhook-consumer`, same as was done for the root Guardrail
    Worker, but with **Root directory** set to `workers/webhook-consumer`
-   instead of `/`. It needs its own KV binding (same namespace id as
-   above) and a `SHOPIFY_WEBHOOK_SECRET` set via
+   instead of `/`. It needs the same KV binding (namespace id above) and a
+   `SHOPIFY_WEBHOOK_SECRET` set via
    `npx wrangler secret put SHOPIFY_WEBHOOK_SECRET`.
-3. **Register a Shopify Partner app** and run `shopify app config link`
-   from `shopify-app/` to replace the placeholder `client_id`/URLs in
-   `shopify.app.toml`, then `shopify app generate extension` (or manually
-   verify) to confirm the Cart Transform function's runtime adapter shape
-   matches what the real CLI scaffold expects.
+3. ~~Register a Shopify Partner app.~~ **Partially done** — real
+   `client_id` (`d3f114303ecd6de5e650b4bdb96106f6`) is now in
+   `shopify.app.toml`. Still needed: `application_url`,
+   `dev_store_url`, and the auth redirect URL are still placeholders
+   (need a hosted app URL and the dev store's real `.myshopify.com`
+   handle), and the Cart Transform function's runtime adapter shape in
+   `run.ts` still needs verification against a real
+   `shopify app generate extension` scaffold or `shopify app deploy`.
 4. **Set up a dev store with 2+ locations** with split inventory to
    actually exercise the full/partial/zero-overlap guardrail scenarios —
    nothing here has been checked against real Shopify inventory data yet.
