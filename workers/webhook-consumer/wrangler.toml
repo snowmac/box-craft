@@ -1,0 +1,24 @@
+name = "box-craft-webhook-consumer"
+main = "src/index.ts"
+compatibility_date = "2026-09-22"
+
+[[durable_objects.bindings]]
+name = "SKU_DEBOUNCER"
+class_name = "SkuDebouncer"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["SkuDebouncer"]
+
+# Must be the SAME KV namespace id as the Guardrail Worker's
+# LOCATION_BITMAP binding (see ../../wrangler.toml) — this Worker also uses
+# it to read the inventory_item_id -> variant GID lookup the backfill
+# script populates (see shared/bitmap.ts inventoryItemMapKey). Not yet
+# provisioned in this environment — see specs/product/assumptions.md.
+# [[kv_namespaces]]
+# binding = "LOCATION_BITMAP"
+# id = ""
+
+# Set with: npx wrangler secret put SHOPIFY_WEBHOOK_SECRET
+# (Shopify's webhook signing secret, from the app's Partner Dashboard
+# credentials — not yet available in this environment.)

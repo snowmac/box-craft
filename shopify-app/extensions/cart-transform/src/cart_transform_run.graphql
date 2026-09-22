@@ -1,0 +1,35 @@
+# Requests only the fields the function actually uses — Shopify explicitly
+# recommends this to keep function execution inside its runtime budget.
+# See Non-Functional Requirements in specs/product/technical-spec.md.
+query CartTransformRunInput {
+  shop {
+    # Set once per store at install time (see "Configure placeholder
+    # bundle product" task) — the merged bundle line's parentVariantId.
+    metafield(namespace: "boxcraft", key: "bundle_parent_variant_id") {
+      value
+    }
+  }
+  cart {
+    lines {
+      id
+      quantity
+      cost {
+        totalAmount {
+          amount
+          currencyCode
+        }
+      }
+      bundleId: attribute(key: "_bundle_id") {
+        value
+      }
+      bundlePrice: attribute(key: "_bundle_price") {
+        value
+      }
+      sellingPlanAllocation {
+        sellingPlan {
+          id
+        }
+      }
+    }
+  }
+}

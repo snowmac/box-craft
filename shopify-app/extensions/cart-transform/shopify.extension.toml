@@ -1,0 +1,21 @@
+# Field names/shape follow Shopify's documented cart_transform function
+# extension config as of this writing, but haven't been validated against
+# a real `shopify app deploy` (no Partner-linked app in this environment —
+# see specs/product/assumptions.md). Re-verify against
+# shopify.dev/docs/api/functions before first deploy.
+
+api_version = "2026-01"
+
+[[extensions]]
+name = "boxcraft-cart-transform"
+handle = "boxcraft-cart-transform"
+type = "function"
+
+[[extensions.targeting]]
+target = "cart.transform.run"
+input_query = "src/cart_transform_run.graphql"
+export = "run"
+
+[extensions.build]
+command = "npm run build"
+path = "dist/function.wasm"

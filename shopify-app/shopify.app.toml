@@ -1,0 +1,34 @@
+# Hand-scaffolded to match the structure `shopify app init` generates.
+# This session has no Shopify Partner account access, so it can't run the
+# interactive CLI to register a real app — client_id and the URLs below
+# are placeholders. Once a Partner app exists (see
+# specs/product/assumptions.md), run `shopify app config link` from this
+# directory to pull the real values in, or fill them in by hand from the
+# Partner Dashboard.
+
+client_id = "REPLACE_WITH_PARTNER_APP_CLIENT_ID"
+name = "BoxCraft"
+handle = "boxcraft"
+application_url = "https://REPLACE_WITH_APP_URL"
+embedded = true
+
+[build]
+automatically_update_urls_on_dev = true
+dev_store_url = "REPLACE_WITH_DEV_STORE.myshopify.com"
+
+[webhooks]
+api_version = "2026-01"
+
+  [[webhooks.subscriptions]]
+  topics = [ "app/uninstalled" ]
+  uri = "/webhooks/app/uninstalled"
+
+[access_scopes]
+# read_inventory + read_locations: the Guardrail Worker's backfill script
+# and the webhook consumer's inventory_levels/update subscription both
+# need these. read_products: theme app extension needs variant data for
+# the Pick-N picker config.
+scopes = "read_inventory,read_locations,read_products"
+
+[auth]
+redirect_urls = [ "https://REPLACE_WITH_APP_URL/auth/callback" ]
