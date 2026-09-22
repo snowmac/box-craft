@@ -2,3 +2,12 @@ node_modules/
 .wrangler/
 dist/
 *.log
+
+# Not committed: Cloudflare's Workers Build runs `npm ci` whenever a
+# lockfile is present, which hit a version-compatibility failure between
+# our local npm (10.9.7) and Cloudflare's build image (npm 10.9.2) even
+# with a lockfile that's genuinely in sync with package.json. Nothing at
+# deploy time needs it anyway — wrangler bundles TypeScript itself and
+# fetches its own copy fresh via npx regardless of what's installed. Keep
+# lockfiles local-only for reproducible dev/test installs.
+package-lock.json
