@@ -205,40 +205,43 @@ succeeded, and cleaning up the stored token on `app/uninstalled`.
    Cloudflare dashboard (Bindings → Add binding) on the `box-craft`
    Workers project if it isn't picked up automatically from
    `wrangler.toml` on the next deploy.
-2. **Create a second Cloudflare Workers Build project** for
-   `workers/webhook-consumer`, same as was done for the root Guardrail
-   Worker, but with **Root directory** set to `workers/webhook-consumer`
-   instead of `/`. It needs the same KV binding (namespace id above) and a
-   `SHOPIFY_WEBHOOK_SECRET` set via
-   `npx wrangler secret put SHOPIFY_WEBHOOK_SECRET`.
+2. **Deploy `workers/webhook-consumer` and `workers/app-backend`, create
+   the `SHOP_TOKENS` namespace, and set all three secrets** —
+   `scripts/setup-cloudflare.mjs` automates this entire step. Run
+   `npx wrangler login` locally, then:
+   ```
+   SHOPIFY_CLIENT_SECRET=... SHOPIFY_WEBHOOK_SECRET=... \
+     node scripts/setup-cloudflare.mjs
+   ```
+   It creates the KV namespace, sets secrets, direct-deploys both
+   Workers (this creates them on the account even without a Git-connected
+   Workers Build project), and wires the resulting app-backend URL into
+   both `workers/app-backend/wrangler.toml` and `shopify.app.toml`
+   automatically. Still not scriptable even with a Cloudflare login:
+   Git-connecting either Worker to a Workers Build project for
+   auto-deploy-on-push (dashboard-only, no CLI/API for it) — both are
+   live either way via this script's direct deploy, just not
+   auto-redeployed on future pushes until you do that one-time dashboard
+   step.
 3. ~~Register a Shopify Partner app.~~ **Partially done** — real
    `client_id` (`d3f114303ecd6de5e650b4bdb96106f6`) and `dev_store_url`
-   (`box-craft-demo.myshopify.com`) are now in `shopify.app.toml`. Still
-   open: the Cart Transform function's runtime adapter shape in `run.ts`
-   needs verification against a real `shopify app generate extension`
-   scaffold or `shopify app deploy`.
+   (`box-craft-demo.myshopify.com`) are now in `shopify.app.toml`, and
+   `application_url`/`redirect_urls` get filled in automatically by
+   `setup-cloudflare.mjs` above. Still needed: push that config to the
+   real Partner app with `shopify login` + `shopify app deploy` (out of
+   scope for a script that assumes only a Cloudflare login) — this
+   registers the real redirect URL and the `app/uninstalled` webhook
+   subscription with Shopify. Also still open: the Cart Transform
+   function's runtime adapter shape in `run.ts` needs verification
+   against a real `shopify app generate extension` scaffold or
+   `shopify app deploy`.
 4. **Set up a dev store with 2+ locations** with split inventory to
    actually exercise the full/partial/zero-overlap guardrail scenarios —
    nothing here has been checked against real Shopify inventory data yet.
 5. **Run the backfill script** once the above exist, with real
    `SHOPIFY_ADMIN_ACCESS_TOKEN` / `CLOUDFLARE_API_TOKEN` values, before
    expecting the guardrail to do anything other than fail open.
-6. **Create a third Cloudflare Workers Build project** for
-   `workers/app-backend`, same pattern as step 2 but with **Root
-   directory** set to `workers/app-backend`. Needs its own KV namespace
-   (`SHOP_TOKENS` — separate from `LOCATION_BITMAP`, created the same way
-   as step 1) bound, plus two secrets:
-   `npx wrangler secret put SHOPIFY_CLIENT_SECRET` (from the Partner
-   Dashboard app credentials) and
-   `npx wrangler secret put SHOPIFY_WEBHOOK_SECRET`.
-7. **Once app-backend is deployed**, take its `*.workers.dev` URL (or a
-   custom domain) and: set it as `APP_URL` in
-   `workers/app-backend/wrangler.toml`'s `[vars]`, and as
-   `application_url` + the `/auth/callback` redirect URL in
-   `shopify-app/shopify.app.toml`. Then register the `app/uninstalled`
-   webhook subscription (already declared in `shopify.app.toml`) and the
-   OAuth redirect URL in the Partner Dashboard app settings so they match.
-8. **Configure Managed Pricing** in the Partner Dashboard (Starter
+6. **Configure Managed Pricing** in the Partner Dashboard (Starter
    $19/mo, Pro $49/mo per the Pricing plan) — this is a dashboard
    configuration, not code, and is what makes the plan-selection screen
    appear automatically during install. Nothing in `workers/app-backend`
