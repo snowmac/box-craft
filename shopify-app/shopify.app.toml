@@ -1,8 +1,10 @@
 # Hand-scaffolded to match the structure `shopify app init` generates.
-# client_id below is the real Partner app's client ID. application_url,
-# dev_store_url, and the auth redirect URL are still placeholders — fill
-# those in (or run `shopify app config link` from this directory) once
-# the app has a real hosted URL and dev store handle. See
+# client_id and dev_store_url below are real. application_url and the
+# auth redirect URL are still placeholders — there's no app-backend
+# service in this codebase yet to host them (OAuth install flow, embedded
+# admin UI, AppSubscription billing). Fill these in once that exists, or
+# run `shopify app dev` locally, which auto-tunnels and fills
+# application_url in for you during development. See
 # specs/product/assumptions.md.
 
 client_id = "d3f114303ecd6de5e650b4bdb96106f6"
@@ -13,7 +15,7 @@ embedded = true
 
 [build]
 automatically_update_urls_on_dev = true
-dev_store_url = "REPLACE_WITH_DEV_STORE.myshopify.com"
+dev_store_url = "box-craft-demo.myshopify.com"
 
 [webhooks]
 api_version = "2026-01"
