@@ -1,4 +1,4 @@
-name = "boxcraft-guardrail"
+name = "box-craft"
 main = "src/index.ts"
 compatibility_date = "2026-09-22"
 
