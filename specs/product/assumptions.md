@@ -17,25 +17,60 @@ App Store, and Go-to-Market sections of the tasks doc (those need a
 Partner account, real merchant data, and human business actions and
 weren't attempted at all).
 
-Everything below is pure code: written, unit-tested (30 tests across 4
-packages, all passing), and typechecked, but **not yet deployed or run
-against a real Shopify store or live Cloudflare resources.**
+Everything below is pure code: written, unit-tested (40 tests across 5
+packages, all passing), and typechecked. The root Guardrail Worker has a
+real Cloudflare deploy and a real KV binding as of this session; the other
+two Workers and the Shopify app pieces are **not yet deployed or run
+against a real Shopify store.**
 
 ## Repo layout
 
 ```
 /                                  Guardrail Worker (deployed as the
-                                    "box-craft" Cloudflare project)
-/shared/                           Pure logic shared by both Workers
+                                    "box-craft" Cloudflare project, real
+                                    KV binding active)
+/shared/                           Pure logic shared across all 3 Workers
 /workers/webhook-consumer/         Second Cloudflare Worker, NOT YET
                                     connected to a Cloudflare project —
                                     see "Manual steps" below
+/workers/app-backend/              Third Cloudflare Worker: OAuth install
+                                    flow, embedded admin shell,
+                                    app/uninstalled cleanup. NOT YET
+                                    connected to a Cloudflare project.
 /scripts/backfill.ts               One-time Admin API -> KV backfill
 /shopify-app/                      Hand-scaffolded Shopify app + extensions
   shopify.app.toml
   extensions/cart-transform/       Cart Transform function
   extensions/pick-n-picker/        Theme app extension
 ```
+
+## Cloudflare deploy pipeline fix (found and fixed mid-build)
+
+Cloudflare's Workers Build started running `npm ci` once we committed a
+`package-lock.json`, which failed on their build image (npm 10.9.2) with
+"Missing: @types/node@22.20.4 from lock file" — even though the lockfile
+was genuinely in sync with `package.json` (`npm ci` succeeds locally on
+npm 10.9.7, and regenerating the lockfile from scratch changed nothing but
+wrangler's patch version). This looks like an npm-version compatibility
+quirk, not a real dependency problem. Fix: stopped committing
+`package-lock.json` for all three Worker projects (kept locally,
+gitignored) — nothing at deploy time needs it, since `wrangler deploy`
+bundles TypeScript itself and fetches its own copy of wrangler fresh via
+`npx` regardless of what's in `node_modules`. Without a lockfile present,
+Cloudflare's build no longer runs an install step at all.
+
+## App-backend scope decision
+
+The user chose to build a real app-backend Worker rather than rely on
+`shopify app dev`'s local tunnel. Its scope turned out smaller than a
+generic "OAuth + billing + admin UI" backend would suggest, because the
+Product Plan already specifies **Managed Pricing** (Partner
+Dashboard-hosted plans) over hand-rolled `AppSubscriptionCreate` calls —
+so Shopify hosts the entire plan-selection screen natively during install,
+and this Worker never needs to call the Billing API itself. Its actual job
+is just: OAuth install (`/auth`, `/auth/callback`), storing the resulting
+access token per shop, a minimal embedded admin shell confirming install
+succeeded, and cleaning up the stored token on `app/uninstalled`.
 
 ## Design decisions made without explicit sign-off
 
@@ -121,6 +156,27 @@ against a real Shopify store or live Cloudflare resources.**
   concept of which store is calling it, so it can't yet distinguish
   tenants if this is meant to serve multiple stores from one deployment.
 
+- **OAuth state stored in an HttpOnly cookie, not KV**: CSRF protection
+  for the OAuth callback uses a signed, short-lived cookie set at `/auth`
+  and compared at `/auth/callback`, rather than a server-side session
+  store. Simpler and stateless, but means the install flow only works if
+  the merchant's browser carries cookies between the two requests
+  (true for a normal browser flow, just flagging the assumption).
+
+- **`inventory_item_id -> variant GID` mapping reused nowhere here**: the
+  app-backend Worker doesn't touch the bitmap or that mapping at all —
+  it's a separate concern (OAuth + token storage only), with its own KV
+  namespace (`SHOP_TOKENS`) rather than reusing `LOCATION_BITMAP`. Access
+  tokens are secrets; deliberately not mixed into the same namespace as
+  the bitmap data.
+
+- **Embedded admin shell is intentionally minimal**: just confirms install
+  succeeded and points the merchant at the theme editor to add the Pick-N
+  block. No settings UI, since v1 has no merchant-facing config beyond
+  what the theme editor already provides (per the Technical Spec). This
+  may need to grow once billing/tier state needs to be surfaced somewhere
+  merchant-visible.
+
 ## Known gaps (explicitly out of scope for what a headless session can do)
 
 - **No live deploy or real-store test** of any of this. All verification
@@ -158,18 +214,32 @@ against a real Shopify store or live Cloudflare resources.**
 3. ~~Register a Shopify Partner app.~~ **Partially done** — real
    `client_id` (`d3f114303ecd6de5e650b4bdb96106f6`) and `dev_store_url`
    (`box-craft-demo.myshopify.com`) are now in `shopify.app.toml`. Still
-   needed, and explicitly **deferred by the user for now** (see task #16
-   in the task list): `application_url` and the auth redirect URL, which
-   require deciding whether to build a real app-backend service (OAuth
-   install flow, embedded admin UI, `AppSubscription` billing calls — none
-   of which exist in this codebase yet) or rely on `shopify app dev`'s
-   local tunnel while still in the design-partner stage. Also still open:
-   the Cart Transform function's runtime adapter shape in `run.ts` needs
-   verification against a real `shopify app generate extension` scaffold
-   or `shopify app deploy`.
+   open: the Cart Transform function's runtime adapter shape in `run.ts`
+   needs verification against a real `shopify app generate extension`
+   scaffold or `shopify app deploy`.
 4. **Set up a dev store with 2+ locations** with split inventory to
    actually exercise the full/partial/zero-overlap guardrail scenarios —
    nothing here has been checked against real Shopify inventory data yet.
 5. **Run the backfill script** once the above exist, with real
    `SHOPIFY_ADMIN_ACCESS_TOKEN` / `CLOUDFLARE_API_TOKEN` values, before
    expecting the guardrail to do anything other than fail open.
+6. **Create a third Cloudflare Workers Build project** for
+   `workers/app-backend`, same pattern as step 2 but with **Root
+   directory** set to `workers/app-backend`. Needs its own KV namespace
+   (`SHOP_TOKENS` — separate from `LOCATION_BITMAP`, created the same way
+   as step 1) bound, plus two secrets:
+   `npx wrangler secret put SHOPIFY_CLIENT_SECRET` (from the Partner
+   Dashboard app credentials) and
+   `npx wrangler secret put SHOPIFY_WEBHOOK_SECRET`.
+7. **Once app-backend is deployed**, take its `*.workers.dev` URL (or a
+   custom domain) and: set it as `APP_URL` in
+   `workers/app-backend/wrangler.toml`'s `[vars]`, and as
+   `application_url` + the `/auth/callback` redirect URL in
+   `shopify-app/shopify.app.toml`. Then register the `app/uninstalled`
+   webhook subscription (already declared in `shopify.app.toml`) and the
+   OAuth redirect URL in the Partner Dashboard app settings so they match.
+8. **Configure Managed Pricing** in the Partner Dashboard (Starter
+   $19/mo, Pro $49/mo per the Pricing plan) — this is a dashboard
+   configuration, not code, and is what makes the plan-selection screen
+   appear automatically during install. Nothing in `workers/app-backend`
+   needs to change for this.
