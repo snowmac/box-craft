@@ -860,6 +860,52 @@ is the plan's own accept criteria for T12; needs checking from a
 machine with real Shopify access before considering the admin page
 done.
 
+## 2026-09-23 — Admin/ops plan, Phase 4: operator console
+
+**T13 done — Ops console scaffold + auth.** New Worker,
+`workers/ops-console` (Cloudflare project `box-craft-ops`) — same
+lightweight-HTML/CSS/vanilla-JS rules as the merchant admin page, no
+build step. Bindings: `SHOP_TOKENS` and `LOCATION_BITMAP` (same KV
+namespace ids the other three Workers already use — this console only
+ever reads them, though nothing about a KV binding itself enforces
+that, so it's a code-discipline convention, matching D16's own
+wording), `DB` (commented out pending D1 provisioning, same as
+everywhere else). Secrets `OPS_TOKEN` and `SHOPIFY_CLIENT_SECRET` are
+`wrangler secret put` only — never in `wrangler.toml`, and generating/
+storing the actual `OPS_TOKEN` value in the local keychain is one of
+the plan's human checkpoints, listed below.
+
+`src/auth.ts` implements D15 precisely: the login cookie is
+`HMAC-SHA256(key=OPS_TOKEN, message="box-craft-ops-session-v1")` — a
+fixed, deterministic digest, not the token itself, so the cookie that
+ever leaves the server can't be used to recover `OPS_TOKEN`, and every
+subsequent request re-derives and compares the same digest
+(constant-time) rather than needing the raw token sent again.
+`HttpOnly; Secure; SameSite=Strict`, 7-day `Max-Age` (an internal
+single-operator tool doesn't need session-only cookies; Cloudflare
+Access is the intended defense-in-depth layer on top, per the human
+checkpoints). `GET/POST /login` and `GET /health` are the only public
+routes; every other route checks the cookie first and 302s to
+`/login` otherwise — verified directly for `/`, an arbitrary unknown
+path, and a garbage/tampered cookie value, not just the one route T14
+will build out. `POST /logout` clears the cookie.
+
+Added to `.github/workflows/deploy-workers.yml`'s matrix and
+path-filter alongside the other two Actions-deployed Workers.
+
+21 new tests (13 for `auth.ts`'s sign/verify/cookie-header logic
+directly, 8 route-level: health and login public, correct/incorrect
+token, the redirect-without-cookie behavior across several paths, a
+tampered cookie, a valid cookie reaching the (currently placeholder)
+protected home route, and logout). 220 tests across all four Worker
+packages (root 65, webhook-consumer 19, app-backend 115, ops-console
+21), typecheck clean everywhere.
+
+`/` currently renders a one-line placeholder — T14 builds out the six
+real views (Overview, Store detail, Events explorer, Errors, KV
+inspector, Guardrail tester) and the four actions on top of this same
+auth gate.
+
 ## Where things stand now (updated 2026-09-23, end of day)
 
 ### Done and verified on the dev store (`box-craft-demo`)

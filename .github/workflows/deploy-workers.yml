@@ -1,4 +1,4 @@
-# Auto-deploys the two Workers that aren't on Cloudflare Workers Builds.
+# Auto-deploys the Workers that aren't on Cloudflare Workers Builds.
 # (The root Guardrail Worker, `box-craft`, deploys via Workers Builds.)
 # Connecting a Worker to Workers Builds is dashboard-only, and wrangler's
 # OAuth login has no Builds API scope, so these deploy from Actions instead.
@@ -26,6 +26,7 @@ jobs:
     outputs:
       webhook-consumer: ${{ steps.filter.outputs.webhook-consumer }}
       app-backend: ${{ steps.filter.outputs.app-backend }}
+      ops-console: ${{ steps.filter.outputs.ops-console }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -40,6 +41,10 @@ jobs:
               - "workers/app-backend/**"
               - "shared/**"
               - ".github/workflows/deploy-workers.yml"
+            ops-console:
+              - "workers/ops-console/**"
+              - "shared/**"
+              - ".github/workflows/deploy-workers.yml"
 
   deploy:
     needs: changes
@@ -47,7 +52,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        worker: [webhook-consumer, app-backend]
+        worker: [webhook-consumer, app-backend, ops-console]
     steps:
       - uses: actions/checkout@v4
         if: needs.changes.outputs[matrix.worker] == 'true' || github.event_name == 'workflow_dispatch'
