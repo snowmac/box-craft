@@ -11,15 +11,38 @@ function mockKv(entries: Record<string, unknown>) {
 	};
 }
 
+// Tracks only "INSERT INTO events" binds — a shop_config lookup (T6) also
+// calls prepare().bind() on this same mock, but as a SELECT, not an event.
 function mockDb() {
 	const inserts: unknown[][] = [];
 	return {
 		db: {
-			prepare: () => ({
+			prepare: (query: string) => ({
 				bind: (...args: unknown[]) => {
-					inserts.push(args);
+					if (query.includes("INSERT INTO events")) inserts.push(args);
 					return { run: async () => {}, first: async () => null, all: async () => ({ results: [] }) };
 				},
+			}),
+		},
+		inserts,
+	};
+}
+
+// A mockDb whose shop_config SELECT returns a specific stored row, so
+// handleCheck's shop_config lookup (T6) can be exercised end to end without
+// touching the events INSERT path (which mockDb() above covers).
+function mockDbWithShopConfig(row: { guardrail_enabled: number; unknown_stock_policy: string }) {
+	const inserts: unknown[][] = [];
+	return {
+		db: {
+			prepare: (query: string) => ({
+				bind: (...args: unknown[]) => ({
+					run: async () => {
+						inserts.push(args);
+					},
+					first: async <T>() => (query.includes("FROM shop_config") ? (row as T) : null),
+					all: async () => ({ results: [] }),
+				}),
 			}),
 		},
 		inserts,
@@ -143,4 +166,78 @@ test("event recording never breaks the response even if DB is unbound (undefined
 	await flush(ctx);
 
 	assert.equal(response.status, 200);
+});
+
+test("guardrail_enabled=0 short-circuits to {compatible:true, disabled:true} without touching the bitmap", async () => {
+	const { db } = mockDbWithShopConfig({ guardrail_enabled: 0, unknown_stock_policy: "block" });
+	const ctx = mockCtx();
+	let kvCalled = false;
+	const kv = {
+		async get() {
+			kvCalled = true;
+			return null;
+		},
+	};
+
+	const request = new Request("https://box-craft.example/check", {
+		method: "POST",
+		body: JSON.stringify({
+			variantIds: ["1", "2"],
+			shop: "guardrail-disabled-test.myshopify.com",
+		}),
+	});
+
+	const response = await worker.fetch(request, { LOCATION_BITMAP: kv as never, DB: db }, ctx);
+	await flush(ctx);
+
+	assert.equal(response.status, 200);
+	assert.deepEqual(await response.json(), { compatible: true, disabled: true });
+	assert.equal(kvCalled, false);
+});
+
+test("unknown_stock_policy=allow: an unknown variant is ignored rather than blocking (D6 accept criteria)", async () => {
+	const { db } = mockDbWithShopConfig({ guardrail_enabled: 1, unknown_stock_policy: "allow" });
+	const ctx = mockCtx();
+	const kv = mockKv({
+		[bitmapKey("gid://shopify/ProductVariant/1")]: { locations: ["L1"], updatedAt: "" },
+		// variant 2 has no bitmap entry at all
+	});
+
+	const request = new Request("https://box-craft.example/check", {
+		method: "POST",
+		body: JSON.stringify({
+			variantIds: ["gid://shopify/ProductVariant/1", "gid://shopify/ProductVariant/2"],
+			shop: "policy-allow-test.myshopify.com",
+		}),
+	});
+
+	const response = await worker.fetch(request, { LOCATION_BITMAP: kv as never, DB: db }, ctx);
+	await flush(ctx);
+
+	const body = (await response.json()) as { compatible: boolean; locations: string[] };
+	assert.equal(body.compatible, true);
+	assert.deepEqual(body.locations, ["L1"]);
+});
+
+test("unknown_stock_policy=block: an unknown variant blocks the selection", async () => {
+	const { db } = mockDbWithShopConfig({ guardrail_enabled: 1, unknown_stock_policy: "block" });
+	const ctx = mockCtx();
+	const kv = mockKv({
+		[bitmapKey("gid://shopify/ProductVariant/1")]: { locations: ["L1"], updatedAt: "" },
+		// variant 2 has no bitmap entry at all
+	});
+
+	const request = new Request("https://box-craft.example/check", {
+		method: "POST",
+		body: JSON.stringify({
+			variantIds: ["gid://shopify/ProductVariant/1", "gid://shopify/ProductVariant/2"],
+			shop: "policy-block-test.myshopify.com",
+		}),
+	});
+
+	const response = await worker.fetch(request, { LOCATION_BITMAP: kv as never, DB: db }, ctx);
+	await flush(ctx);
+
+	const body = (await response.json()) as { compatible: boolean };
+	assert.equal(body.compatible, false);
 });

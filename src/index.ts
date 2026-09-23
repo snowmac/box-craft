@@ -1,6 +1,8 @@
 import { bitmapKey, toVariantGid, type BitmapEntry } from "../shared/bitmap.ts";
 import { checkCompatibility, type VariantLocations } from "../shared/intersection.ts";
 import { recordEvent, type D1Like, type EventContext } from "../shared/events.ts";
+import { createShopConfigCache, getCachedShopConfig } from "../shared/shop-config-cache.ts";
+import { DEFAULT_SHOP_CONFIG, type ShopConfig } from "../shared/shop-config.ts";
 import { preflightResponse, withCors } from "./cors.ts";
 
 export interface Env {
@@ -9,6 +11,26 @@ export interface Env {
 }
 
 const SHOP_DOMAIN_PATTERN = /^[a-z0-9][a-z0-9-]*\.myshopify\.com$/;
+
+// T6: one cache per isolate, shared across requests it handles (60s TTL).
+const shopConfigCache = createShopConfigCache();
+
+async function loadShopConfig(env: Env, shop: string | null, ctx: EventContext): Promise<ShopConfig> {
+	try {
+		return await getCachedShopConfig(env.DB, shop, shopConfigCache);
+	} catch {
+		// Fail open, same as a bitmap read failure below — a shop_config
+		// outage must never block a shopper.
+		recordEvent(env.DB, ctx, {
+			shop,
+			source: "guardrail",
+			type: "error",
+			level: "error",
+			data: { where: "shop_config", message: "config read failed" },
+		});
+		return DEFAULT_SHOP_CONFIG;
+	}
+}
 
 // D5: record the shop if it's a genuine *.myshopify.com value, but never
 // reject the request over it — the compatibility check itself never
@@ -57,6 +79,11 @@ async function handleCheck(request: Request, env: Env, ctx: EventContext): Promi
 		return Response.json({ error: "invalid JSON body" }, { status: 400 });
 	}
 
+	const shopConfig = await loadShopConfig(env, shop, ctx);
+	if (!shopConfig.guardrailEnabled) {
+		return Response.json({ compatible: true, disabled: true });
+	}
+
 	if (variantIds.length === 0) {
 		return Response.json({ compatible: true, locations: [] });
 	}
@@ -70,7 +97,7 @@ async function handleCheck(request: Request, env: Env, ctx: EventContext): Promi
 				const raw = await env.LOCATION_BITMAP.get(bitmapKey(toVariantGid(variantId)));
 				if (raw === null) unknownCount++;
 				const entry = raw ? (JSON.parse(raw) as BitmapEntry) : null;
-				return { variantId, locations: entry?.locations ?? [] };
+				return { variantId, locations: entry?.locations ?? [], known: raw !== null };
 			}),
 		);
 	} catch {
@@ -87,7 +114,7 @@ async function handleCheck(request: Request, env: Env, ctx: EventContext): Promi
 		return Response.json({ compatible: true, locations: [], failOpen: true });
 	}
 
-	const result = checkCompatibility(selections);
+	const result = checkCompatibility(selections, shopConfig.unknownStockPolicy);
 	recordEvent(env.DB, ctx, {
 		shop,
 		source: "guardrail",

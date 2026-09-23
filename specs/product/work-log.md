@@ -461,6 +461,43 @@ boxes list is read.
 122 tests total across all three packages (root 33, webhook-consumer
 8, app-backend 81), typecheck clean everywhere.
 
+**T6 done — Guardrail honors per-shop config.** `shared/shop-config.ts`:
+`getShopConfig`/`upsertShopConfig` moved here from app-backend's
+`db.ts` (which now just re-exports them) so the Guardrail Worker can
+read the same `shop_config` table without depending on the app-backend
+package. `shared/shop-config-cache.ts`: a small isolate-local cache
+(`createShopConfigCache()`/`getCachedShopConfig()`, 60s TTL, keyed by
+shop) — built as an injectable interface rather than a bare module-level
+`Map` so tests can use an isolated cache per case.
+
+`/check` now looks up the calling shop's config before doing any bitmap
+work: `guardrail_enabled=0` short-circuits to
+`{compatible:true, disabled:true}` without touching KV at all; a config
+read failure fails open (default config) the same way a bitmap read
+failure already did, rather than risk blocking a shopper over a D1
+outage.
+
+`shared/intersection.ts`: `checkCompatibility()` takes an optional
+`UnknownStockPolicy` (`"allow" | "block"`, default `"block"` — matches
+the old, only behavior, so existing callers/tests are unaffected), and
+`VariantLocations` gained an optional `known` flag. Under `"allow"`
+(D6's per-shop default), a variant with no bitmap entry at all is
+dropped from the intersection rather than treated as available
+nowhere — a product created after the last backfill no longer blocks
+every bundle it's added to. Under `"block"`, unknown variants still
+block, as before. `src/index.ts` sets `known: false` for exactly the
+variants whose KV lookup returned no entry, and passes the shop's
+policy through.
+
+12 new tests: 4 for the config cache (null-shop shortcut, TTL hit/miss,
+per-shop isolation), 5 for the two policies in `shared/intersection`
+(including the plan's own accept criteria: unknown + known variant is
+compatible under `allow`, blocked under `block`), 3 end-to-end on the
+Worker itself (`disabled:true`, and the allow/block policies wired
+through a real `/check` call). 134 tests total across all three
+packages (root 45, webhook-consumer 8, app-backend 81), typecheck
+clean everywhere.
+
 ## Where things stand now (updated 2026-09-23, end of day)
 
 ### Done and verified on the dev store (`box-craft-demo`)
