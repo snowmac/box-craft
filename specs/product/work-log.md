@@ -333,9 +333,14 @@ and the product drops out of `/collections/all`; it still appeared in
 search suggestions right after the change (likely index lag — unverified).
 Direct link `/products/boxcraft-bundle` stays reachable by design.
 
-Released as `boxcraft-bundles-5`. Pending: merchant approval of the new
-`write_publications` scope on box-craft-demo (consent screen shown), then
-verify store setup re-runs with it.
+Released as `boxcraft-bundles-5`; the new scope was approved on
+box-craft-demo. First run failed ("Online Store publication not found"):
+catalog titles are really "Channel Catalog <id> for Online Store". Now
+matched by channel handle `online_store` (`8db2aff`, test fixture updated
+to the real API shape). **Publish path verified for real:** unpublished
+the bundle product via the API, reloaded the app → setup republished it
+(`UNLISTED`, on Online Store) and checkout still merges into one
+"BoxCraft Bundle" line.
 
 ## Where things stand now (updated 2026-09-23, end of day)
 
@@ -368,12 +373,6 @@ no order placed).
   webhook-consumer 4 — all passing.
 
 ### Left to do
-
-**Finish in progress**
-- Approve the `write_publications` scope on box-craft-demo (consent
-  screen open), then confirm setup re-ran. Optionally test the publish
-  path itself: unpublish the bundle product, reload the app, confirm it
-  gets republished and checkout still merges.
 
 **Decisions needed (@adam.bourg)** — details in `assumptions.md`
 - **Unknown variants block bundles** instead of failing open (products
