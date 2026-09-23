@@ -1,5 +1,6 @@
 import { verifyShopifyHmac } from "../../../shared/hmac.ts";
 import { verifyShopifyOAuthHmac } from "../../../shared/oauth-hmac.ts";
+import { recordEvent, type D1Like, type EventContext } from "../../../shared/events.ts";
 import {
 	buildAuthorizeUrl,
 	buildEmbeddedAppUrl,
@@ -23,6 +24,7 @@ export interface Env {
 	// This Worker's own public URL, used to build the OAuth redirect_uri.
 	// Same value as shopify.app.toml's application_url once that's set.
 	APP_URL: string;
+	DB: D1Like;
 }
 
 const STATE_COOKIE = "boxcraft_oauth_state";
@@ -37,7 +39,7 @@ interface ShopRecord {
 }
 
 export default {
-	async fetch(request: Request, env: Env): Promise<Response> {
+	async fetch(request: Request, env: Env, ctx: EventContext): Promise<Response> {
 		const url = new URL(request.url);
 
 		if (url.pathname === "/health") {
@@ -49,7 +51,7 @@ export default {
 		}
 
 		if (url.pathname === "/auth/callback" && request.method === "GET") {
-			return handleAuthCallback(request, url, env);
+			return handleAuthCallback(request, url, env, ctx);
 		}
 
 		if (
@@ -60,7 +62,7 @@ export default {
 		}
 
 		if (url.pathname === "/" && request.method === "GET") {
-			return handleEmbeddedShell(url, env);
+			return handleEmbeddedShell(url, env, ctx);
 		}
 
 		return new Response("Not found", { status: 404 });
@@ -98,6 +100,7 @@ async function handleAuthCallback(
 	request: Request,
 	url: URL,
 	env: Env,
+	ctx: EventContext,
 ): Promise<Response> {
 	const shop = url.searchParams.get("shop");
 	const code = url.searchParams.get("code");
@@ -133,6 +136,13 @@ async function handleAuthCallback(
 	});
 
 	if (!tokenRes.ok) {
+		recordEvent(env.DB, ctx, {
+			shop,
+			source: "app",
+			type: "token_exchange",
+			level: "error",
+			data: { ok: false, status: tokenRes.status },
+		});
 		return new Response("Token exchange failed", { status: 502 });
 	}
 
@@ -145,6 +155,7 @@ async function handleAuthCallback(
 		shopTokenKey(shop),
 		JSON.stringify({ accessToken, scope, installedAt: new Date().toISOString() }),
 	);
+	recordEvent(env.DB, ctx, { shop, source: "app", type: "token_exchange", data: { ok: true } });
 
 	return new Response(null, {
 		status: 302,
@@ -173,12 +184,12 @@ async function handleUninstalled(request: Request, env: Env): Promise<Response> 
 	return new Response("ok", { status: 200 });
 }
 
-async function handleEmbeddedShell(url: URL, env: Env): Promise<Response> {
+async function handleEmbeddedShell(url: URL, env: Env, ctx: EventContext): Promise<Response> {
 	// Managed installation (scopes in shopify.app.toml) never calls /auth:
 	// Shopify loads this page with a signed id_token instead, and the app is
 	// expected to trade it for an access token. Do that the first time we
 	// see a shop.
-	const installed = await ensureShopReady(url.searchParams.get("id_token"), env);
+	const installed = await ensureShopReady(url.searchParams.get("id_token"), env, ctx);
 
 	// Minimal shell: no merchant config here for v1 — the Pick-N picker's
 	// settings live in the theme editor, and guardrail rules are
@@ -207,7 +218,7 @@ async function handleEmbeddedShell(url: URL, env: Env): Promise<Response> {
 
 // Makes sure the shop has an access token covering the current scopes and
 // that per-store setup has run. Returns whether both are true afterwards.
-async function ensureShopReady(idToken: string | null, env: Env): Promise<boolean> {
+async function ensureShopReady(idToken: string | null, env: Env, ctx: EventContext): Promise<boolean> {
 	if (!idToken) return false;
 	const session = await verifySessionToken(idToken, env.SHOPIFY_CLIENT_ID, env.SHOPIFY_CLIENT_SECRET);
 	if (!session) return false;
@@ -217,7 +228,7 @@ async function ensureShopReady(idToken: string | null, env: Env): Promise<boolea
 	// Re-exchange when scopes grew since the stored token was issued (the
 	// merchant approves new scopes, but the old token doesn't gain them).
 	if (!record || !scopesCover(record.scope, env.SHOPIFY_SCOPES)) {
-		record = await exchangeForOfflineToken(session.shop, idToken, env);
+		record = await exchangeForOfflineToken(session.shop, idToken, env, ctx);
 		if (!record) return false;
 		await env.SHOP_TOKENS.put(key, JSON.stringify(record));
 	}
@@ -225,8 +236,22 @@ async function ensureShopReady(idToken: string | null, env: Env): Promise<boolea
 	if (!record.setupAt) {
 		try {
 			await ensureStoreSetup(adminClient(session.shop, record.accessToken));
+			recordEvent(env.DB, ctx, {
+				shop: session.shop,
+				source: "app",
+				type: "setup",
+				data: { step: "store_setup", ok: true },
+			});
 		} catch (err) {
-			console.error(`store setup failed for ${session.shop}: ${err}`);
+			const message = err instanceof Error ? err.message : String(err);
+			console.error(`store setup failed for ${session.shop}: ${message}`);
+			recordEvent(env.DB, ctx, {
+				shop: session.shop,
+				source: "app",
+				type: "setup",
+				level: "error",
+				data: { step: "store_setup", ok: false, error: message },
+			});
 			return false;
 		}
 		record.setupAt = new Date().toISOString();
@@ -235,7 +260,12 @@ async function ensureShopReady(idToken: string | null, env: Env): Promise<boolea
 	return true;
 }
 
-async function exchangeForOfflineToken(shop: string, idToken: string, env: Env): Promise<ShopRecord | null> {
+async function exchangeForOfflineToken(
+	shop: string,
+	idToken: string,
+	env: Env,
+	ctx: EventContext,
+): Promise<ShopRecord | null> {
 	const tokenRequest = buildOfflineTokenExchangeRequest(
 		shop,
 		env.SHOPIFY_CLIENT_ID,
@@ -249,12 +279,20 @@ async function exchangeForOfflineToken(shop: string, idToken: string, env: Env):
 	});
 	if (!tokenRes.ok) {
 		console.error(`token exchange failed for ${shop}: ${tokenRes.status}`);
+		recordEvent(env.DB, ctx, {
+			shop,
+			source: "app",
+			type: "token_exchange",
+			level: "error",
+			data: { ok: false, status: tokenRes.status },
+		});
 		return null;
 	}
 	const { access_token: accessToken, scope } = (await tokenRes.json()) as {
 		access_token: string;
 		scope: string;
 	};
+	recordEvent(env.DB, ctx, { shop, source: "app", type: "token_exchange", data: { ok: true } });
 	return { accessToken, scope, installedAt: new Date().toISOString() };
 }
 

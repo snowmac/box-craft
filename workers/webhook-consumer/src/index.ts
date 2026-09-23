@@ -1,10 +1,12 @@
 import { inventoryItemMapKey } from "../../../shared/bitmap.ts";
 import { verifyShopifyHmac } from "../../../shared/hmac.ts";
+import { recordEvent, type D1Like, type EventContext } from "../../../shared/events.ts";
 import { SkuDebouncer, type DebouncerEnv } from "./debouncer.ts";
 
 export interface Env extends DebouncerEnv {
 	SKU_DEBOUNCER: DurableObjectNamespace;
 	SHOPIFY_WEBHOOK_SECRET: string;
+	DB: D1Like;
 }
 
 interface InventoryLevelsUpdatePayload {
@@ -14,7 +16,7 @@ interface InventoryLevelsUpdatePayload {
 }
 
 export default {
-	async fetch(request: Request, env: Env): Promise<Response> {
+	async fetch(request: Request, env: Env, ctx: EventContext): Promise<Response> {
 		const url = new URL(request.url);
 
 		if (url.pathname === "/health") {
@@ -25,7 +27,7 @@ export default {
 			url.pathname === "/webhooks/inventory-levels-update" &&
 			request.method === "POST"
 		) {
-			return handleWebhook(request, env);
+			return handleWebhook(request, env, ctx);
 		}
 
 		return new Response("Not found", { status: 404 });
@@ -35,9 +37,11 @@ export default {
 export async function handleWebhook(
 	request: Request,
 	env: Env,
+	ctx: EventContext,
 ): Promise<Response> {
 	const rawBody = await request.text();
 	const hmacHeader = request.headers.get("X-Shopify-Hmac-Sha256");
+	const shop = request.headers.get("X-Shopify-Shop-Domain");
 
 	const valid = await verifyShopifyHmac(
 		rawBody,
@@ -67,6 +71,13 @@ export async function handleWebhook(
 		// Fail open on the lookup too: if we can't read the mapping, drop
 		// this event rather than guess. The next backfill run corrects any
 		// staleness this causes.
+		recordEvent(env.DB, ctx, {
+			shop,
+			source: "webhook",
+			type: "error",
+			level: "error",
+			data: { where: "inventory_item_lookup", message: "KV read failed" },
+		});
 		return new Response("accepted", { status: 202 });
 	}
 
@@ -74,6 +85,12 @@ export async function handleWebhook(
 		// No mapping yet — likely a variant created after the last backfill.
 		// Drop the event; a subsequent backfill run will pick up its current
 		// state. We deliberately don't write under an unverified key.
+		recordEvent(env.DB, ctx, {
+			shop,
+			source: "webhook",
+			type: "webhook_inventory",
+			data: { status: "dropped_unknown_item" },
+		});
 		return new Response("accepted, no mapping yet", { status: 202 });
 	}
 
@@ -89,6 +106,13 @@ export async function handleWebhook(
 			locationId,
 			available: payload.available > 0,
 		}),
+	});
+
+	recordEvent(env.DB, ctx, {
+		shop,
+		source: "webhook",
+		type: "webhook_inventory",
+		data: { status: "written" },
 	});
 
 	return new Response("ok", { status: 202 });

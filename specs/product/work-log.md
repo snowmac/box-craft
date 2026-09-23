@@ -379,6 +379,25 @@ the `boxcraft` D1 database, apply the migration, and wire the real
 session doesn't have, same reason the KV namespace/secrets steps were
 scripted rather than run directly.
 
+**T3 done:** webhook-consumer records a `webhook_inventory` event per
+call (`status: "written"` or `"dropped_unknown_item"`), plus an `error`
+event if the inventory-item-to-variant-GID KV lookup itself fails
+(still accepts the webhook either way). Reads `X-Shopify-Shop-Domain`
+for the event's shop. Found `SkuDebouncer`'s constructor used TS
+parameter-property syntax, unsupported by Node's strip-only mode —
+only surfaced now because a test needed to load `debouncer.ts`
+directly for the first time (transitively, via `src/index.ts`); fixed
+to plain assignment, no behavior change.
+
+app-backend now records `token_exchange` events (`ok: true/false` +
+status on failure) on both the managed-installation token-exchange
+path and the direct `/auth/callback` OAuth path, and a `setup` event
+(`step: "store_setup"`, `ok`, `error` message on failure) around
+`ensureStoreSetup`. 9 new tests across both Workers (4 webhook-consumer,
+5 app-backend) covering written/dropped/error paths, token
+re-exchange triggering a real setup re-run, and the already-installed
+no-op case.
+
 ## Where things stand now (updated 2026-09-23, end of day)
 
 ### Done and verified on the dev store (`box-craft-demo`)

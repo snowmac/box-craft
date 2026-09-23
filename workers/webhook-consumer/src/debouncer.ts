@@ -23,10 +23,17 @@ export interface DebouncerEnv {
 }
 
 export class SkuDebouncer implements DurableObject {
-	constructor(
-		private readonly state: DurableObjectState,
-		private readonly env: DebouncerEnv,
-	) {}
+	private readonly state: DurableObjectState;
+	private readonly env: DebouncerEnv;
+
+	// Plain assignment, not a TS parameter-property constructor: Node's
+	// --experimental-strip-types (strip-only mode) can't desugar that
+	// syntax, and this file needs to load directly under `node --test`
+	// now that a test imports it transitively via src/index.ts.
+	constructor(state: DurableObjectState, env: DebouncerEnv) {
+		this.state = state;
+		this.env = env;
+	}
 
 	async fetch(request: Request): Promise<Response> {
 		const update = (await request.json()) as PendingUpdate;
