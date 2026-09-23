@@ -590,6 +590,71 @@ machine with full network access (see the "Pre-deploy fixes" and
 "First end-to-end bundle merge" entries above) — same asset, should
 build cleanly there.
 
+**T9 done — Inventory sync in the Worker (D12).** `shared/backfill.ts`:
+the GraphQL paging + bitmap-entry-building logic that used to live only
+in `scripts/backfill.ts`, now pure and taking an injected `fetchImpl`
+so it's usable both from a real Worker (a KV binding, no Cloudflare
+REST token) and from the standalone script (still writing through the
+REST bulk-KV endpoint, for running outside a Worker entirely).
+`scripts/backfill.ts` is now a thin CLI: load env vars, call
+`runBackfill()`, POST the resulting entries to Cloudflare's bulk-KV
+endpoint — no behavior change, same 26-variants-to-52-KV-entries
+result, just the core logic moved out and shared.
+
+`workers/app-backend/src/sync.ts`: `runSync(env, ctx, shop,
+accessToken, trigger)` — inserts a `running` `sync_runs` row, calls
+`runBackfill`, writes the resulting entries to `LOCATION_BITMAP`
+(added as a real binding to app-backend's `wrangler.toml`, same
+namespace id the Guardrail Worker and webhook-consumer already use) in
+batches of 20 concurrent `put()`s, then closes the row out as `ok`
+(with the variant count) or `error` (with the message), and records a
+`sync` event either way. Guards against concurrent runs per shop: a
+`sync_runs` row still `running` and started within the last 10 minutes
+skips the new run rather than stacking it. Every D1 step — the guard
+read, the start-row insert, the finish-row update — is independently
+best-effort; a D1 outage never stops the KV write itself, matching the
+rest of the app's fail-open posture. The row to close out is
+identified by `(shop, started_at)` rather than an autoincrement id,
+since the minimal `D1Like` type doesn't expose `run().meta.last_row_id`
+and that pair is unique enough in practice for this diagnostic data.
+`now` and `fetchImpl` are both injectable (default to the real
+clock/`fetch`) purely so the 10-minute window and the backfill call
+are deterministically testable.
+
+Wired into all three places the plan calls for: `ensureShopReady`
+calls it once, right after store setup, so a fresh install gets a
+populated bitmap immediately instead of staying fully fail-open until
+someone runs the old laptop-only script or the next daily cron;
+`POST /api/sync` (previously a 501 stub) now runs it for real and
+returns `{status, variants}` or `{status, error}` (502 on error, 200
+otherwise); and app-backend's existing `scheduled` handler (T4's prune
+cron) now also enumerates every shop in `SHOP_TOKENS` via
+`.list({prefix:"shop:"})` and runs a `"cron"`-triggered sync for each —
+sequentially, and `runSync` never throws, so one shop's failure can't
+stop the rest.
+
+26 new tests: 7 for `shared/backfill.ts` (entry building, zero-quantity
+filtering, location sorting, cursor pagination, a variant with no
+usable inventory-item id, Admin API HTTP/GraphQL error handling), 5 for
+`sync.ts` directly (a full ok run, the concurrent-run guard actually
+blocking an in-flight sync via a deferred-fetch stub, the 10-minute
+window expiring, a backfill failure recording `error`, and a D1 outage
+still completing the KV write), and 2 end-to-end through
+`POST /api/sync` in `api.test.ts` (ok with a mocked Admin API response,
+502 on failure) — the pre-existing scheduled-handler test's mock
+`SHOP_TOKENS` gained a `.list()` implementation to match. 160 tests
+across the three Worker packages (root 65, webhook-consumer 8,
+app-backend 87), typecheck clean everywhere.
+
+Couldn't run the plan's own accept check (`POST /api/sync` against the
+real `box-craft-demo` store, confirming a `sync_runs` row `ok` with
+`variants=26` and refreshed KV `updatedAt`s) — this sandbox has no
+real Cloudflare/Shopify credentials, and D1 itself isn't provisioned
+yet in production either (still a commented-out binding in all three
+`wrangler.toml` files, pending the `scripts/setup-cloudflare.mjs` run
+noted back in T1). Deferred to the same human checkpoint as the rest
+of D1 provisioning.
+
 ## Where things stand now (updated 2026-09-23, end of day)
 
 ### Done and verified on the dev store (`box-craft-demo`)

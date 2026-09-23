@@ -3,13 +3,15 @@ import { getShopConfig, upsertShopConfig, listBoxes, upsertBox, deleteBox, type 
 import { validateBoxInput, validateConfigInput, toBox, isValidHandle, type ConfigInput } from "./validate.ts";
 import { writeBoxesMetafields } from "./boxes-metafield.ts";
 import { adminClient } from "./admin-client.ts";
-import type { D1Like } from "../../../shared/events.ts";
+import { runSync } from "./sync.ts";
+import type { D1Like, EventContext } from "../../../shared/events.ts";
 
 export interface ApiEnv {
 	SHOP_TOKENS: KVNamespace;
 	SHOPIFY_CLIENT_ID: string;
 	SHOPIFY_CLIENT_SECRET: string;
 	DB: D1Like;
+	LOCATION_BITMAP: KVNamespace;
 }
 
 interface AuthedShop {
@@ -35,7 +37,7 @@ async function authenticate(request: Request, env: ApiEnv): Promise<AuthedShop |
 	return { shop: session.shop, accessToken: record.accessToken };
 }
 
-export async function handleApi(request: Request, url: URL, env: ApiEnv): Promise<Response> {
+export async function handleApi(request: Request, url: URL, env: ApiEnv, ctx: EventContext): Promise<Response> {
 	const authed = await authenticate(request, env);
 	if (!authed) return Response.json({ error: "unauthorized" }, { status: 401 });
 
@@ -65,10 +67,9 @@ export async function handleApi(request: Request, url: URL, env: ApiEnv): Promis
 	}
 
 	if (url.pathname === "/api/sync" && request.method === "POST") {
-		// T9 wires in the real inventory-sync implementation. This route
-		// exists now, correctly authenticated, so the admin UI (T12) can be
-		// built against a stable API shape ahead of that.
-		return Response.json({ error: "not implemented yet" }, { status: 501 });
+		const result = await runSync(env, ctx, authed.shop, authed.accessToken, "manual");
+		const status = result.status === "error" ? 502 : 200;
+		return Response.json(result, { status });
 	}
 
 	return new Response("Not found", { status: 404 });

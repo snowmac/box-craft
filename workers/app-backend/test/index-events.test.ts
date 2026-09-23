@@ -43,6 +43,14 @@ function mockKvNamespace() {
 		async delete(key: string) {
 			store.delete(key);
 		},
+		// T9: the scheduled handler enumerates SHOP_TOKENS to run the daily
+		// sync for every installed shop.
+		async list(options?: { prefix?: string }) {
+			const keys = [...store.keys()]
+				.filter((k) => !options?.prefix || k.startsWith(options.prefix))
+				.map((name) => ({ name }));
+			return { keys, list_complete: true, cursor: undefined };
+		},
 		store,
 	};
 }

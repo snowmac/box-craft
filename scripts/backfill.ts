@@ -1,8 +1,11 @@
 // One-time (or re-run-on-demand) script that populates the location
-// bitmap from a Shopify store's current Admin API inventory data. Run this
-// once per merchant on install, before the webhook consumer has any events
-// to work from — otherwise the bitmap (and therefore the guardrail) starts
-// out empty and fail-open on everything.
+// bitmap from a Shopify store's current Admin API inventory data, via
+// Cloudflare's REST bulk-KV endpoint. T9 moved the real logic (GraphQL
+// paging + entry building) into shared/backfill.ts, shared with
+// workers/app-backend's runSync (which writes through a real KV binding
+// instead — no Cloudflare API token needed there); this script stays as a
+// thin CLI wrapper for running outside a Worker, e.g. before app-backend
+// has ever run for a store.
 //
 // Usage:
 //   SHOPIFY_SHOP=my-store.myshopify.com \
@@ -15,11 +18,9 @@
 // First run against box-craft-demo on 2026-09-23 (26 variants, 52 KV
 // entries). See specs/product/work-log.md.
 
-import { bitmapKey, inventoryItemMapKey, type BitmapEntry } from "../shared/bitmap.ts";
+import { runBackfill, type BackfillKvEntry } from "../shared/backfill.ts";
 
 const SHOPIFY_API_VERSION = process.env.SHOPIFY_API_VERSION ?? "2026-01";
-const VARIANTS_PAGE_SIZE = 50;
-const LOCATIONS_PAGE_SIZE = 50; // per-variant inventory level page size
 const KV_BULK_CHUNK_SIZE = 1000;
 
 interface Config {
@@ -53,121 +54,7 @@ function loadConfig(): Config {
 	};
 }
 
-interface VariantNode {
-	id: string;
-	inventoryItem: {
-		id: string;
-		inventoryLevels: {
-			pageInfo: { hasNextPage: boolean; endCursor: string | null };
-			edges: Array<{
-				node: {
-					location: { id: string };
-					quantities: Array<{ name: string; quantity: number }>;
-				};
-			}>;
-		};
-	};
-}
-
-const VARIANTS_QUERY = `
-  query BackfillVariants($cursor: String) {
-    productVariants(first: ${VARIANTS_PAGE_SIZE}, after: $cursor) {
-      pageInfo { hasNextPage endCursor }
-      edges {
-        node {
-          id
-          inventoryItem {
-            id
-            inventoryLevels(first: ${LOCATIONS_PAGE_SIZE}) {
-              pageInfo { hasNextPage endCursor }
-              edges {
-                node {
-                  location { id }
-                  quantities(names: ["available"]) { name quantity }
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-`;
-
-async function shopifyGraphQL<T>(
-	config: Config,
-	query: string,
-	variables: Record<string, unknown>,
-): Promise<T> {
-	const res = await fetch(
-		`https://${config.shop}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
-		{
-			method: "POST",
-			headers: {
-				"Content-Type": "application/json",
-				"X-Shopify-Access-Token": config.adminAccessToken,
-			},
-			body: JSON.stringify({ query, variables }),
-		},
-	);
-
-	if (!res.ok) {
-		throw new Error(`Shopify Admin API request failed: ${res.status} ${await res.text()}`);
-	}
-
-	const body = (await res.json()) as { data?: T; errors?: unknown };
-	if (body.errors) {
-		throw new Error(`Shopify Admin API returned errors: ${JSON.stringify(body.errors)}`);
-	}
-	if (!body.data) {
-		throw new Error("Shopify Admin API returned no data");
-	}
-	return body.data;
-}
-
-function extractLocations(variant: VariantNode): string[] {
-	if (variant.inventoryItem.inventoryLevels.pageInfo.hasNextPage) {
-		// A single SKU stocked across more than LOCATIONS_PAGE_SIZE
-		// locations would need its own pagination loop here. Not expected
-		// for this app's target segment (a handful of warehouses/3PLs), so
-		// left unhandled rather than adding untested complexity — revisit
-		// if a merchant actually hits this.
-		console.warn(
-			`Variant ${variant.id} has more than ${LOCATIONS_PAGE_SIZE} inventory levels; some locations may be missed.`,
-		);
-	}
-
-	return variant.inventoryItem.inventoryLevels.edges
-		.filter((edge) => {
-			const available = edge.node.quantities.find((q) => q.name === "available");
-			return (available?.quantity ?? 0) > 0;
-		})
-		.map((edge) => edge.node.location.id)
-		.sort();
-}
-
-async function fetchAllVariants(config: Config): Promise<VariantNode[]> {
-	const variants: VariantNode[] = [];
-	let cursor: string | null = null;
-	let hasNextPage = true;
-
-	while (hasNextPage) {
-		const data: { productVariants: { pageInfo: { hasNextPage: boolean; endCursor: string | null }; edges: Array<{ node: VariantNode }> } } =
-			await shopifyGraphQL(config, VARIANTS_QUERY, { cursor });
-
-		variants.push(...data.productVariants.edges.map((e) => e.node));
-		hasNextPage = data.productVariants.pageInfo.hasNextPage;
-		cursor = data.productVariants.pageInfo.endCursor;
-		console.log(`Fetched ${variants.length} variants so far...`);
-	}
-
-	return variants;
-}
-
-async function writeKvBulk(
-	config: Config,
-	entries: Array<{ key: string; value: string }>,
-): Promise<void> {
+async function writeKvBulk(config: Config, entries: BackfillKvEntry[]): Promise<void> {
 	for (let i = 0; i < entries.length; i += KV_BULK_CHUNK_SIZE) {
 		const chunk = entries.slice(i, i + KV_BULK_CHUNK_SIZE);
 		const res = await fetch(
@@ -195,32 +82,16 @@ async function main(): Promise<void> {
 	const config = loadConfig();
 
 	console.log(`Fetching inventory for ${config.shop}...`);
-	const variants = await fetchAllVariants(config);
-	console.log(`Fetched ${variants.length} variants total.`);
+	const { entries, variantCount } = await runBackfill({
+		shop: config.shop,
+		accessToken: config.adminAccessToken,
+		apiVersion: SHOPIFY_API_VERSION,
+		fetchImpl: fetch,
+	});
+	console.log(`Fetched ${variantCount} variants total.`);
 
-	const now = new Date().toISOString();
-	const kvEntries: Array<{ key: string; value: string }> = [];
-
-	for (const variant of variants) {
-		const locations = extractLocations(variant);
-		const entry: BitmapEntry = { locations, updatedAt: now };
-
-		kvEntries.push({ key: bitmapKey(variant.id), value: JSON.stringify(entry) });
-
-		// inventoryItem.id is a GID like "gid://shopify/InventoryItem/123";
-		// the webhook payload's inventory_item_id is the bare numeric ID, so
-		// strip the GID down to match what the webhook consumer looks up.
-		const inventoryItemNumericId = variant.inventoryItem.id.split("/").pop();
-		if (inventoryItemNumericId) {
-			kvEntries.push({
-				key: inventoryItemMapKey(inventoryItemNumericId),
-				value: variant.id,
-			});
-		}
-	}
-
-	console.log(`Writing ${kvEntries.length} KV entries (bitmap + inventory-item map)...`);
-	await writeKvBulk(config, kvEntries);
+	console.log(`Writing ${entries.length} KV entries (bitmap + inventory-item map)...`);
+	await writeKvBulk(config, entries);
 	console.log("Backfill complete.");
 }
 

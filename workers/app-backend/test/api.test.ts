@@ -118,12 +118,52 @@ function metafieldSuccessFetch(): Promise<Response> {
 	);
 }
 
+// T9: a single-page, single-variant response shaped like shared/backfill.ts's
+// productVariants query, for exercising POST /api/sync end to end.
+function backfillSuccessFetch(): Promise<Response> {
+	return Promise.resolve(
+		Response.json({
+			data: {
+				productVariants: {
+					pageInfo: { hasNextPage: false, endCursor: null },
+					edges: [
+						{
+							node: {
+								id: "gid://shopify/ProductVariant/1",
+								inventoryItem: {
+									id: "gid://shopify/InventoryItem/10",
+									inventoryLevels: {
+										pageInfo: { hasNextPage: false, endCursor: null },
+										edges: [
+											{
+												node: {
+													location: { id: "gid://shopify/Location/1" },
+													quantities: [{ name: "available", quantity: 5 }],
+												},
+											},
+										],
+									},
+								},
+							},
+						},
+					],
+				},
+			},
+		}),
+	);
+}
+
+function mockCtx() {
+	return { waitUntil: () => {} };
+}
+
 function baseEnv(kv = mockKvNamespace({ accessToken: "tok", scope: "x", installedAt: "x" })): ApiEnv {
 	return {
 		SHOP_TOKENS: kv,
 		SHOPIFY_CLIENT_ID: CLIENT_ID,
 		SHOPIFY_CLIENT_SECRET: CLIENT_SECRET,
 		DB: fakeD1(),
+		LOCATION_BITMAP: mockKvNamespace(),
 	} as unknown as ApiEnv;
 }
 
@@ -137,28 +177,28 @@ function request(path: string, opts: RequestInit & { token?: string | null } = {
 test("a request with no Authorization header is rejected with 401", async () => {
 	const env = baseEnv();
 	const req = request("/api/overview", { token: null });
-	const res = await handleApi(req, new URL(req.url), env);
+	const res = await handleApi(req, new URL(req.url), env, mockCtx());
 	assert.equal(res.status, 401);
 });
 
 test("a request with an invalid session token is rejected with 401", async () => {
 	const env = baseEnv();
 	const req = request("/api/overview", { token: "not-a-real-token" });
-	const res = await handleApi(req, new URL(req.url), env);
+	const res = await handleApi(req, new URL(req.url), env, mockCtx());
 	assert.equal(res.status, 401);
 });
 
 test("a valid token for a shop with no stored access token is rejected with 401", async () => {
 	const env = baseEnv(mockKvNamespace()); // no pre-seeded record for SHOP
 	const req = request("/api/overview");
-	const res = await handleApi(req, new URL(req.url), env);
+	const res = await handleApi(req, new URL(req.url), env, mockCtx());
 	assert.equal(res.status, 401);
 });
 
 test("GET /api/overview reports installed status for an authenticated shop", async () => {
 	const env = baseEnv();
 	const req = request("/api/overview");
-	const res = await handleApi(req, new URL(req.url), env);
+	const res = await handleApi(req, new URL(req.url), env, mockCtx());
 	assert.equal(res.status, 200);
 	const body = (await res.json()) as any;
 	assert.equal(body.shop, SHOP);
@@ -168,18 +208,19 @@ test("GET /api/overview reports installed status for an authenticated shop", asy
 test("GET /api/config returns defaults, PUT /api/config persists a patch", async () => {
 	const env = baseEnv();
 
-	const getRes = await handleApi(request("/api/config"), new URL("https://x/api/config"), env);
+	const getRes = await handleApi(request("/api/config"), new URL("https://x/api/config"), env, mockCtx());
 	assert.deepEqual(await getRes.json(), { guardrailEnabled: true, unknownStockPolicy: "allow" });
 
 	const putRes = await handleApi(
 		request("/api/config", { method: "PUT", body: JSON.stringify({ unknown_stock_policy: "block" }) }),
 		new URL("https://x/api/config"),
 		env,
+		mockCtx(),
 	);
 	assert.equal(putRes.status, 200);
 	assert.deepEqual(await putRes.json(), { guardrailEnabled: true, unknownStockPolicy: "block" });
 
-	const getAgain = await handleApi(request("/api/config"), new URL("https://x/api/config"), env);
+	const getAgain = await handleApi(request("/api/config"), new URL("https://x/api/config"), env, mockCtx());
 	assert.deepEqual(await getAgain.json(), { guardrailEnabled: true, unknownStockPolicy: "block" });
 });
 
@@ -189,6 +230,7 @@ test("PUT /api/config with an invalid policy returns 400 with errors", async () 
 		request("/api/config", { method: "PUT", body: JSON.stringify({ unknown_stock_policy: "maybe" }) }),
 		new URL("https://x/api/config"),
 		env,
+		mockCtx(),
 	);
 	assert.equal(res.status, 400);
 	const body = (await res.json()) as any;
@@ -210,11 +252,12 @@ test("POST /api/boxes creates a box, syncs metafields, and GET /api/boxes lists 
 			request("/api/boxes", { method: "POST", body: JSON.stringify(newBox) }),
 			new URL("https://x/api/boxes"),
 			env,
+			mockCtx(),
 		);
 		assert.equal(res.status, 201);
 	});
 
-	const listRes = await handleApi(request("/api/boxes"), new URL("https://x/api/boxes"), env);
+	const listRes = await handleApi(request("/api/boxes"), new URL("https://x/api/boxes"), env, mockCtx());
 	const { boxes } = (await listRes.json()) as any;
 	assert.equal(boxes.length, 1);
 	assert.equal(boxes[0].handle, "coffee");
@@ -235,6 +278,7 @@ test("POST /api/boxes with invalid input returns 400 and never reaches the metaf
 				request("/api/boxes", { method: "POST", body: JSON.stringify({ handle: "BAD HANDLE", pick_count: 999 }) }),
 				new URL("https://x/api/boxes"),
 				env,
+				mockCtx(),
 			);
 			assert.equal(res.status, 400);
 		},
@@ -252,6 +296,7 @@ test("PUT /api/boxes/:handle updates in place, URL handle wins over any conflict
 			request("/api/boxes", { method: "POST", body: JSON.stringify({ ...box, handle: "default" }) }),
 			new URL("https://x/api/boxes"),
 			env,
+			mockCtx(),
 		);
 		const res = await handleApi(
 			request("/api/boxes/default", {
@@ -260,6 +305,7 @@ test("PUT /api/boxes/:handle updates in place, URL handle wins over any conflict
 			}),
 			new URL("https://x/api/boxes/default"),
 			env,
+			mockCtx(),
 		);
 		assert.equal(res.status, 200);
 		const updated = (await res.json()) as any;
@@ -278,16 +324,18 @@ test("DELETE /api/boxes/:handle removes it", async () => {
 			}),
 			new URL("https://x/api/boxes"),
 			env,
+			mockCtx(),
 		);
 		const delRes = await handleApi(
 			request("/api/boxes/temp", { method: "DELETE" }),
 			new URL("https://x/api/boxes/temp"),
 			env,
+			mockCtx(),
 		);
 		assert.equal(delRes.status, 204);
 	});
 
-	const listRes = await handleApi(request("/api/boxes"), new URL("https://x/api/boxes"), env);
+	const listRes = await handleApi(request("/api/boxes"), new URL("https://x/api/boxes"), env, mockCtx());
 	const { boxes } = (await listRes.json()) as any;
 	assert.deepEqual(boxes, []);
 });
@@ -304,6 +352,7 @@ test("a metafield sync failure still keeps the D1 write, reported as 207", async
 				}),
 				new URL("https://x/api/boxes"),
 				env,
+				mockCtx(),
 			);
 			assert.equal(res.status, 207);
 			const body = (await res.json()) as any;
@@ -311,23 +360,48 @@ test("a metafield sync failure still keeps the D1 write, reported as 207", async
 		},
 	);
 
-	const listRes = await handleApi(request("/api/boxes"), new URL("https://x/api/boxes"), env);
+	const listRes = await handleApi(request("/api/boxes"), new URL("https://x/api/boxes"), env, mockCtx());
 	const { boxes } = (await listRes.json()) as any;
 	assert.equal(boxes.length, 1); // saved despite the sync failure
 });
 
-test("POST /api/sync is a stub returning 501 until T9", async () => {
+test("POST /api/sync runs a real inventory sync and returns ok with the variant count", async () => {
 	const env = baseEnv();
-	const res = await handleApi(
-		request("/api/sync", { method: "POST" }),
-		new URL("https://x/api/sync"),
-		env,
+	await withMockedFetch(backfillSuccessFetch, async () => {
+		const res = await handleApi(
+			request("/api/sync", { method: "POST" }),
+			new URL("https://x/api/sync"),
+			env,
+			mockCtx(),
+		);
+		assert.equal(res.status, 200);
+		const body = (await res.json()) as any;
+		assert.equal(body.status, "ok");
+		assert.equal(body.variants, 1);
+	});
+});
+
+test("POST /api/sync surfaces an Admin API failure as a 502 with the error", async () => {
+	const env = baseEnv();
+	await withMockedFetch(
+		async () => new Response("server error", { status: 500 }),
+		async () => {
+			const res = await handleApi(
+				request("/api/sync", { method: "POST" }),
+				new URL("https://x/api/sync"),
+				env,
+				mockCtx(),
+			);
+			assert.equal(res.status, 502);
+			const body = (await res.json()) as any;
+			assert.equal(body.status, "error");
+			assert.ok(body.error);
+		},
 	);
-	assert.equal(res.status, 501);
 });
 
 test("an unknown /api route returns 404", async () => {
 	const env = baseEnv();
-	const res = await handleApi(request("/api/nope"), new URL("https://x/api/nope"), env);
+	const res = await handleApi(request("/api/nope"), new URL("https://x/api/nope"), env, mockCtx());
 	assert.equal(res.status, 404);
 });

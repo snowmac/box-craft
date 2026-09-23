@@ -16,6 +16,7 @@ import { ensureStoreSetup } from "./store-setup.ts";
 import { adminClient } from "./admin-client.ts";
 import { seedDefaultBoxIfNone } from "./db.ts";
 import { handleApi, type ApiEnv } from "./api.ts";
+import { runSync } from "./sync.ts";
 
 export interface Env {
 	SHOP_TOKENS: KVNamespace;
@@ -29,6 +30,8 @@ export interface Env {
 	// Same value as shopify.app.toml's application_url once that's set.
 	APP_URL: string;
 	DB: D1Like;
+	// T9/D12: runSync writes the location bitmap here directly.
+	LOCATION_BITMAP: KVNamespace;
 }
 
 const STATE_COOKIE = "boxcraft_oauth_state";
@@ -69,7 +72,7 @@ export default {
 		}
 
 		if (url.pathname.startsWith("/api/")) {
-			return handleApi(request, url, env);
+			return handleApi(request, url, env, ctx);
 		}
 
 		return new Response("Not found", { status: 404 });
@@ -80,8 +83,26 @@ export default {
 		// just means slightly more D1 storage until the next run — never
 		// worth surfacing as a Worker error.
 		ctx.waitUntil(pruneOldEvents(env.DB).catch(() => {}));
+		// D12: daily inventory sync for every installed shop. runSync never
+		// throws (it records its own outcome), so one shop's failure never
+		// stops the rest from running.
+		ctx.waitUntil(runDailySyncForAllShops(env, ctx));
 	},
 };
+
+async function runDailySyncForAllShops(env: Env, ctx: EventContext): Promise<void> {
+	let cursor: string | undefined;
+	do {
+		const list = await env.SHOP_TOKENS.list({ prefix: "shop:", cursor });
+		for (const key of list.keys) {
+			const record = await env.SHOP_TOKENS.get<ShopRecord>(key.name, "json");
+			if (record?.accessToken) {
+				await runSync(env, ctx, key.name.slice("shop:".length), record.accessToken, "cron");
+			}
+		}
+		cursor = list.list_complete ? undefined : list.cursor;
+	} while (cursor);
+}
 
 function handleAuthStart(url: URL, env: Env): Response {
 	const shop = url.searchParams.get("shop");
@@ -251,6 +272,12 @@ async function ensureShopReady(idToken: string | null, env: Env, ctx: EventConte
 		try {
 			await ensureStoreSetup(adminClient(session.shop, record.accessToken));
 			await seedDefaultBoxIfNone(env.DB, session.shop);
+			// D12: populate the location bitmap on first setup rather than
+			// leaving the guardrail fully fail-open until someone runs the
+			// old laptop-only script or waits for the next daily cron.
+			// runSync never throws — a sync failure here must never stop
+			// setup from completing.
+			await runSync(env, ctx, session.shop, record.accessToken, "setup");
 			recordEvent(env.DB, ctx, {
 				shop: session.shop,
 				source: "app",
