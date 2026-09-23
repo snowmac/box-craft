@@ -22,7 +22,7 @@ test("pruneOldEvents deletes rows older than the cutoff", async () => {
 			return {
 				bind: (...args: unknown[]) => {
 					boundValue = args[0];
-					return { run: async () => {} };
+					return { run: async () => {}, first: async () => null, all: async () => ({ results: [] }) };
 				},
 			};
 		},

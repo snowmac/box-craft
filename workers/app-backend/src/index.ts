@@ -12,7 +12,10 @@ import {
 } from "./oauth.ts";
 import { scopesCover } from "./scopes.ts";
 import { verifySessionToken } from "./session-token.ts";
-import { ensureStoreSetup, type AdminClient } from "./store-setup.ts";
+import { ensureStoreSetup } from "./store-setup.ts";
+import { adminClient } from "./admin-client.ts";
+import { seedDefaultBoxIfNone } from "./db.ts";
+import { handleApi, type ApiEnv } from "./api.ts";
 
 export interface Env {
 	SHOP_TOKENS: KVNamespace;
@@ -29,7 +32,6 @@ export interface Env {
 }
 
 const STATE_COOKIE = "boxcraft_oauth_state";
-const ADMIN_API_VERSION = "2026-07";
 
 interface ShopRecord {
 	accessToken: string;
@@ -64,6 +66,10 @@ export default {
 
 		if (url.pathname === "/" && request.method === "GET") {
 			return handleEmbeddedShell(url, env, ctx);
+		}
+
+		if (url.pathname.startsWith("/api/")) {
+			return handleApi(request, url, env);
 		}
 
 		return new Response("Not found", { status: 404 });
@@ -244,6 +250,7 @@ async function ensureShopReady(idToken: string | null, env: Env, ctx: EventConte
 	if (!record.setupAt) {
 		try {
 			await ensureStoreSetup(adminClient(session.shop, record.accessToken));
+			await seedDefaultBoxIfNone(env.DB, session.shop);
 			recordEvent(env.DB, ctx, {
 				shop: session.shop,
 				source: "app",
@@ -302,20 +309,6 @@ async function exchangeForOfflineToken(
 	};
 	recordEvent(env.DB, ctx, { shop, source: "app", type: "token_exchange", data: { ok: true } });
 	return { accessToken, scope, installedAt: new Date().toISOString() };
-}
-
-function adminClient(shop: string, accessToken: string): AdminClient {
-	return async (query, variables = {}) => {
-		const res = await fetch(`https://${shop}/admin/api/${ADMIN_API_VERSION}/graphql.json`, {
-			method: "POST",
-			headers: { "Content-Type": "application/json", "X-Shopify-Access-Token": accessToken },
-			body: JSON.stringify({ query, variables }),
-		});
-		if (!res.ok) throw new Error(`Admin API ${res.status}: ${await res.text()}`);
-		const body = (await res.json()) as { data?: unknown; errors?: unknown };
-		if (body.errors) throw new Error(`Admin API errors: ${JSON.stringify(body.errors)}`);
-		return body.data;
-	};
 }
 
 function shopTokenKey(shop: string): string {

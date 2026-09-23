@@ -408,6 +408,59 @@ app-backend gets a `scheduled` handler on a `0 3 * * *` Cron Trigger
 `ctx.waitUntil`. 4 new tests (cutoff math, the DELETE query/bound
 value, and the scheduled handler wiring itself).
 
+**T5 done — Phase 2 started: shop config + boxes API (app-backend).**
+`shared/boxes.ts`: the `Box`/`Discount` types and `defaultBox()` used
+across app-backend and (later) the Cart Transform/picker.
+
+`shared/d1.ts`: widened the D1 type beyond T1's INSERT-only shape to
+also cover `first()`/`all()`, needed for config/box reads. First
+attempt typed `bind()` to return itself, which made every existing
+mock "missing run/first/all" under tsc even though those methods were
+visibly present — a recursive-interface trap. Fixed by splitting into
+`D1PreparedStatementLike` (has `bind()`) and a separate
+`D1ResultLike` (`run`/`first`/`all`) that `bind()` returns. Mechanically
+updated 5 existing test files' mock D1 objects to the fuller shape.
+
+`workers/app-backend/src/`:
+- `validate.ts` — pure validation for box input (handle pattern,
+  pick-count range, discount shape including strictly-ascending tiered
+  percents) and config input (`guardrail_enabled`,
+  `unknown_stock_policy`); collects every error, not just the first.
+  17 tests.
+- `admin-client.ts` — `adminClient()`/`ADMIN_API_VERSION` extracted out
+  of `index.ts` so both it and the new API module share one place that
+  calls the Admin API.
+- `db.ts` — D1 CRUD for `shop_config` and `boxes`
+  (get/upsert config, list/upsert/delete box, `seedDefaultBoxIfNone` —
+  idempotent, only seeds when a shop has zero boxes). 8 tests against a
+  custom in-memory fake D1 (map-based, matches the real query shapes)
+  rather than a generic stub, needed to actually exercise upsert/list/
+  delete/seed semantics.
+- `boxes-metafield.ts` — `writeBoxesMetafields()`: on any box change,
+  writes the full current box list to the app-installation metafield
+  (`boxcraft.boxes`, what the picker reads) and, if a Cart Transform is
+  active, to its own `$app` metafield too (D9/D11 — the function will
+  read its private copy in T8 rather than trusting anything from the
+  storefront). 4 tests.
+- `api.ts` — `handleApi()`, mounted at app-backend's `/api/*`. Every
+  route requires a valid App Bridge session token (D14); the shop
+  always comes from the verified token, never the request body/query.
+  Routes: `GET /api/overview`, `GET`/`PUT /api/config`,
+  `GET`/`POST /api/boxes`, `PUT`/`DELETE /api/boxes/:handle`, and a
+  `POST /api/sync` stub (501, real implementation in T9). Box
+  create/update/delete isn't transactional with the Shopify metafield
+  sync — the D1 write always persists; if the sync throws, the
+  response is `207` with a `syncError` field instead of failing the
+  whole request, since there's no clean cross-service rollback. 13
+  tests.
+
+Wired `seedDefaultBoxIfNone` into `ensureShopReady` right after store
+setup succeeds, so every shop has a `default` box the first time its
+boxes list is read.
+
+122 tests total across all three packages (root 33, webhook-consumer
+8, app-backend 81), typecheck clean everywhere.
+
 ## Where things stand now (updated 2026-09-23, end of day)
 
 ### Done and verified on the dev store (`box-craft-demo`)

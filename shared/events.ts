@@ -62,13 +62,8 @@ function truncateJson(data: Record<string, unknown>): string {
 	});
 }
 
-// Minimal structural type so this file doesn't depend on
-// @cloudflare/workers-types directly — callers pass their real D1Database.
-export interface D1Like {
-	prepare(query: string): {
-		bind(...values: unknown[]): { run(): Promise<unknown> };
-	};
-}
+export type { D1Like } from "./d1.ts";
+import type { D1Like } from "./d1.ts";
 
 export interface EventContext {
 	waitUntil(promise: Promise<unknown>): void;

@@ -18,7 +18,7 @@ function mockDb() {
 			prepare: () => ({
 				bind: (...args: unknown[]) => {
 					inserts.push(args);
-					return { run: async () => {} };
+					return { run: async () => {}, first: async () => null, all: async () => ({ results: [] }) };
 				},
 			}),
 		},

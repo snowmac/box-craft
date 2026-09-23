@@ -59,7 +59,7 @@ test("recordEvent never throws synchronously, even on a PII-rejected payload", (
 		prepare: () => ({
 			bind: (...args: unknown[]) => {
 				calls.push(args);
-				return { run: async () => {} };
+				return { run: async () => {}, first: async () => null, all: async () => ({ results: [] }) };
 			},
 		}),
 	};
@@ -77,7 +77,7 @@ test("recordEvent queues an insert via ctx.waitUntil on a valid event", () => {
 			return {
 				bind: (...args: unknown[]) => {
 					bound = args;
-					return { run: async () => {} };
+					return { run: async () => {}, first: async () => null, all: async () => ({ results: [] }) };
 				},
 			};
 		},
@@ -95,7 +95,11 @@ test("recordEvent queues an insert via ctx.waitUntil on a valid event", () => {
 test("recordEvent never throws even if the DB write itself rejects", async () => {
 	const db = {
 		prepare: () => ({
-			bind: () => ({ run: async () => Promise.reject(new Error("db down")) }),
+			bind: () => ({
+				run: async () => Promise.reject(new Error("db down")),
+				first: async () => null,
+				all: async () => ({ results: [] }),
+			}),
 		}),
 	};
 	const waited: Promise<unknown>[] = [];
