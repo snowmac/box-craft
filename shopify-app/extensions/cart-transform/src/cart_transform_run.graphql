@@ -2,10 +2,15 @@
 # recommends this to keep function execution inside its runtime budget.
 # See Non-Functional Requirements in specs/product/technical-spec.md.
 query CartTransformRunInput {
-  # Written by app-backend's store setup when it activates this function
-  # (cartTransformCreate). No namespace = the app-reserved "$app" one.
+  # Both written by app-backend (store setup / T5's boxes API) to the
+  # cart transform's own metafields — the app-reserved "$app" namespace,
+  # since no namespace is given. D11: the function computes its own price
+  # from `boxes` rather than trusting anything from the cart/storefront.
   cartTransform {
     metafield(key: "bundle_parent_variant_id") {
+      value
+    }
+    boxes: metafield(key: "boxes") {
       value
     }
   }
@@ -13,16 +18,10 @@ query CartTransformRunInput {
     lines {
       id
       quantity
-      cost {
-        totalAmount {
-          amount
-          currencyCode
-        }
-      }
       bundleId: attribute(key: "_bundle_id") {
         value
       }
-      bundlePrice: attribute(key: "_bundle_price") {
+      bundleBox: attribute(key: "_bundle_box") {
         value
       }
       sellingPlanAllocation {

@@ -542,6 +542,54 @@ webhook-consumer 8, app-backend 81), 7 in the picker's own suite, 14
 in cart-transform — all passing, typecheck clean. `shopify theme
 check` on the extension: clean, no offenses.
 
+**T8 done — Cart Transform computes the price server-side (D10,
+D11).** The function's input query drops `cart.lines.cost` and the
+`_bundle_price` line attribute entirely — not just "ignores" them,
+they're no longer even fetched, so there's nothing left to tamper
+with. It now also reads a second cart-transform metafield,
+`boxes` (aliased in the query, same `$app`-reserved namespace as the
+existing `bundle_parent_variant_id` one — T5's `boxes-metafield.ts`
+already writes both), and the line attribute `_bundle_box` the picker
+started sending in T7.
+
+`group-bundles.ts`: new `discountPercent(box: BundleBox | undefined,
+itemCount: number)` — pure, and the whole price decision now runs
+through it rather than a bundleCents-vs-listCents comparison. Unknown
+box (deleted, or a stale handle) or a `"none"` discount both return 0
+(no price adjustment, merges at list); `"percent"` returns its flat
+percent regardless of item count; `"tiered"` returns the highest
+tier whose `min_items` the bundle's line count meets (tiers are
+already validated strictly ascending by `validate.ts`, so a forward
+scan keeping the last match is correct). `BundleBox` is a small type
+local to this extension (not imported from `shared/boxes.ts`) so the
+Function's bundle stays self-contained rather than reaching outside
+the extension directory. The previous cents-based
+percentage-from-price-difference math is gone entirely — the percent
+now comes straight from the merchant's own box config, so there's no
+floating-point drift to guard against the way the old bundleCents/
+listCents comparison had to.
+
+Rewrote `group-bundles.test.ts` for the new design: `discountPercent`
+directly (unknown/none/percent/tiered, tier boundaries, between
+tiers), and `buildCartTransformOperations` end to end (unknown box
+handle, no boxes metafield at all, `"none"` box, a tiered box picking
+the right tier from line count, and — the D11 point made concrete — a
+line object with a smuggled `bundlePrice` field that the function
+never reads, proving a tampered `_bundle_price` has zero effect). 20
+tests, up from 12, all passing; typecheck clean.
+
+Couldn't complete the plan's own accept check (`shopify app function
+build` + `function run` against a replayed real input) from this
+sandbox: the CLI's javy/wasm build step downloads
+`shopify_functions_javy_v4.wasm` from `cdn.shopify.com`, which this
+session's egress policy blocks (403 at the proxy, confirmed via
+`/root/.ccr/README.md`'s guidance — an org policy denial, not
+something to route around). Deferred to a human checkpoint below;
+@adam.bourg previously ran this same build step successfully from a
+machine with full network access (see the "Pre-deploy fixes" and
+"First end-to-end bundle merge" entries above) — same asset, should
+build cleanly there.
+
 ## Where things stand now (updated 2026-09-23, end of day)
 
 ### Done and verified on the dev store (`box-craft-demo`)
