@@ -204,16 +204,28 @@ since the branch switch had deployed. Production branch changed to `main`
 in Settings → Builds; the next push deployed in ~2 minutes and `/check`
 now answers preflights publicly with `Access-Control-Allow-Origin: *`.
 
+## 2026-09-23 — First Shopify app release: `boxcraft-bundles-2`
+
+Two more deploy failures fixed on the way:
+- The picker's guardrail URL setting was `type: "url"`, whose default can
+  only be a store path (`/collections/all`), never blank or external.
+  Switched to `type: "text"`.
+- App handle `boxcraft` is taken across Shopify apps; changed to
+  `boxcraft-bundles` (only affects the admin URL, `/apps/boxcraft-bundles`).
+
+`shopify app deploy --allow-updates` then released version
+`boxcraft-bundles-2`: OAuth redirect URL, `app/uninstalled` and
+`inventory_levels/update` webhook subscriptions, the Cart Transform
+function, and the Pick-N theme app extension are all registered with
+Shopify.
+
 ## Where things stand now
 
-**Live:** Guardrail Worker (`box-craft`), webhook consumer, app-backend —
-all three Cloudflare Workers deployed with real bindings/secrets.
+**Live:** Guardrail Worker (`box-craft`, public, CORS-enabled), webhook
+consumer, app-backend — all three Cloudflare Workers deployed with real
+bindings/secrets. Shopify app version `boxcraft-bundles-2` released.
 
 **Not yet done** (see `assumptions.md` for full detail):
-- `cd shopify-app && shopify app deploy` — registers the real OAuth
-  redirect URL and `app/uninstalled` webhook subscription with Shopify.
-  Without this, an install attempt fails with a redirect_uri mismatch
-  even though the Worker is live.
 - Managed Pricing plan configuration in the Partner Dashboard.
 - Dev store needs 2+ locations with split test inventory (currently just
   created, not yet configured this way).
