@@ -1,0 +1,72 @@
+# Auto-deploys the two Workers that aren't on Cloudflare Workers Builds.
+# (The root Guardrail Worker, `box-craft`, deploys via Workers Builds.)
+# Connecting a Worker to Workers Builds is dashboard-only, and wrangler's
+# OAuth login has no Builds API scope, so these deploy from Actions instead.
+#
+# Needs repo secret CLOUDFLARE_API_TOKEN ("Edit Cloudflare Workers" template).
+
+name: Deploy Workers
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "workers/**"
+      - "shared/**"
+      - ".github/workflows/deploy-workers.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-workers
+  cancel-in-progress: false
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      webhook-consumer: ${{ steps.filter.outputs.webhook-consumer }}
+      app-backend: ${{ steps.filter.outputs.app-backend }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            webhook-consumer:
+              - "workers/webhook-consumer/**"
+              - "shared/**"
+              - ".github/workflows/deploy-workers.yml"
+            app-backend:
+              - "workers/app-backend/**"
+              - "shared/**"
+              - ".github/workflows/deploy-workers.yml"
+
+  deploy:
+    needs: changes
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        worker: [webhook-consumer, app-backend]
+    steps:
+      - uses: actions/checkout@v4
+        if: needs.changes.outputs[matrix.worker] == 'true' || github.event_name == 'workflow_dispatch'
+      - uses: actions/setup-node@v4
+        if: needs.changes.outputs[matrix.worker] == 'true' || github.event_name == 'workflow_dispatch'
+        with:
+          node-version: 22
+      - name: Install and test
+        if: needs.changes.outputs[matrix.worker] == 'true' || github.event_name == 'workflow_dispatch'
+        working-directory: workers/${{ matrix.worker }}
+        run: |
+          npm install --no-audit --no-fund
+          npm test
+          npx tsc --noEmit
+      - name: Deploy
+        if: needs.changes.outputs[matrix.worker] == 'true' || github.event_name == 'workflow_dispatch'
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: 79296b447dd7bf3a6ae8948c18f33cf5
+          workingDirectory: workers/${{ matrix.worker }}
+          command: deploy

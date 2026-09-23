@@ -232,11 +232,12 @@ succeeded, and cleaning up the stored token on `app/uninstalled`.
    `workers/app-backend` at `https://box-craft-app-backend.adam-bourg.workers.dev`,
    `workers/webhook-consumer` deployed with `SHOPIFY_WEBHOOK_SECRET` set.
    `SHOP_TOKENS` KV namespace id `0a36a18ea3344074a5bec4e4c2575f1e`.
-   Still not scriptable even with a Cloudflare login: Git-connecting
-   either Worker to a Workers Build project for auto-deploy-on-push
-   (dashboard-only, no CLI/API for it) — both are live either way via
-   direct deploy, just not auto-redeployed on future pushes until that
-   one-time dashboard step happens.
+   Auto-deploy for these two runs from GitHub Actions
+   (`.github/workflows/deploy-workers.yml`): wrangler has no Workers Builds
+   commands and its OAuth login lacks the Builds API scope (confirmed
+   2026-09-23 — auth error), so they deploy on push to `main` when their
+   files or `shared/` change, after tests + typecheck pass. Needs repo
+   secret `CLOUDFLARE_API_TOKEN`.
 3. ~~Register a Shopify Partner app.~~ **Mostly done** — real `client_id`,
    `dev_store_url`, `application_url`
    (`https://box-craft-app-backend.adam-bourg.workers.dev`), and
