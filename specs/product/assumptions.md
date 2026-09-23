@@ -157,8 +157,10 @@ succeeded, and cleaning up the stored token on `app/uninstalled`.
   time via app-embed config), but there's no install flow built yet to
   wire it up differently, so this is a placeholder that at least makes the
   block functional and demoable today. Its default is the Guardrail
-  Worker's own URL (`https://box-craft.adam-bourg.workers.dev`) because
-  Shopify rejects a blank default for a `url` setting.
+  Worker's own URL (`https://box-craft.adam-bourg.workers.dev`) and it's a
+  `text` setting rather than `url`: Shopify only allows a `url` setting's
+  default to be a store path like `/collections/all`, never blank or an
+  external URL.
 
 - **No auth on `/check` or store-scoping**: per the spec's own note ("no
   session, no auth beyond store validation for v1"), but store validation
