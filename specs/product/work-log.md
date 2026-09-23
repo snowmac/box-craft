@@ -333,7 +333,8 @@ and the product drops out of `/collections/all`; it still appeared in
 search suggestions right after the change (likely index lag — unverified).
 Direct link `/products/boxcraft-bundle` stays reachable by design.
 
-Released as `boxcraft-bundles-5`; the new scope was approved on
+Released as `boxcraft-bundles-5`; the new scope was approved (via
+Chrome, at @adam.bourg's request) on
 box-craft-demo. First run failed ("Online Store publication not found"):
 catalog titles are really "Channel Catalog <id> for Online Store". Now
 matched by channel handle `online_store` (`8db2aff`, test fixture updated
@@ -373,6 +374,14 @@ no order placed).
   webhook-consumer 4 — all passing.
 
 ### Left to do
+
+**Next up — agent-executable plan:** `specs/product/admin-and-ops-plan.md`
+covers the data layer (D1 events), the merchant admin page (metrics,
+boxes + discounts, guardrail settings, inventory sync), and a private
+ops console with logs/metrics/debug actions — all plain HTML/CSS/JS. It
+resolves the unknown-stock and discount decisions with defaults, fixes a
+price-tampering hole (`_bundle_price` trusted from the cart), and moves
+backfill into the Worker. Human steps are batched at its end.
 
 **Decisions needed (@adam.bourg)** — details in `assumptions.md`
 - **Unknown variants block bundles** instead of failing open (products
