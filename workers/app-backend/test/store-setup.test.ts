@@ -33,9 +33,10 @@ function fakeClient(state: FakeState): AdminClient {
 			case "BoxcraftOnlineStorePublication":
 				return {
 					publications: {
+						// Shape and titles as returned by box-craft-demo's Admin API.
 						nodes: [
-							{ id: "gid://shopify/Publication/2", catalog: { title: "Point of Sale" } },
-							{ id: ONLINE_STORE, catalog: { title: "Online Store" } },
+							{ id: "gid://shopify/Publication/2", channels: { nodes: [{ handle: "pos" }] } },
+							{ id: ONLINE_STORE, channels: { nodes: [{ handle: "online_store" }] } },
 						],
 					},
 				};

@@ -62,13 +62,13 @@ async function ensureCartTransform(admin: AdminClient, parentVariantId: string):
 }
 
 async function ensurePublishedToOnlineStore(admin: AdminClient, productId: string): Promise<void> {
-	// Publications have no name of their own; the Online Store one is
-	// identified by its catalog's title.
+	// Publications have no name of their own (catalog titles look like
+	// "Channel Catalog 123 for Online Store"); the channel handle is stable.
 	const data = await admin(`query BoxcraftOnlineStorePublication {
-		publications(first: 25) { nodes { id catalog { title } } }
+		publications(first: 25) { nodes { id channels(first: 1) { nodes { handle } } } }
 	}`);
 	const onlineStore: { id: string } | undefined = data.publications.nodes.find(
-		(p: { catalog: { title: string } | null }) => p.catalog?.title === "Online Store",
+		(p: { channels: { nodes: Array<{ handle: string }> } }) => p.channels.nodes[0]?.handle === "online_store",
 	);
 	if (!onlineStore) throw new Error("Online Store publication not found");
 
