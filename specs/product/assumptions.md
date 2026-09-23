@@ -205,46 +205,33 @@ succeeded, and cleaning up the stored token on `app/uninstalled`.
    Cloudflare dashboard (Bindings → Add binding) on the `box-craft`
    Workers project if it isn't picked up automatically from
    `wrangler.toml` on the next deploy.
-2. **Deploy `workers/webhook-consumer` and `workers/app-backend`, create
-   the `SHOP_TOKENS` namespace, and set both Workers' secrets** —
-   `scripts/setup-cloudflare.mjs` automates this entire step. Run
-   `npx wrangler login` locally, then either:
-   ```
-   ./scripts/setup-cloudflare.sh          # prompts for the secret, masked
-   ```
-   or
-   ```
-   SHOPIFY_CLIENT_SECRET=... node scripts/setup-cloudflare.mjs
-   ```
-   Only one secret is needed — the app's client secret from the Partner
-   Dashboard (your app → Client credentials). It can't be generated or
-   fetched by a script; Shopify only ever shows it there. The webhook
-   signing secret isn't asked for separately: standard TOML-declared
-   webhook subscriptions (what this app uses) are signed with the client
-   secret, so the script reuses it automatically unless
-   `SHOPIFY_WEBHOOK_SECRET` is explicitly set to something else.
-   The script creates the KV namespace, sets secrets, direct-deploys both
-   Workers (this creates them on the account even without a Git-connected
-   Workers Build project), and wires the resulting app-backend URL into
-   both `workers/app-backend/wrangler.toml` and `shopify.app.toml`
-   automatically. Still not scriptable even with a Cloudflare login:
-   Git-connecting either Worker to a Workers Build project for
-   auto-deploy-on-push (dashboard-only, no CLI/API for it) — both are
-   live either way via this script's direct deploy, just not
-   auto-redeployed on future pushes until you do that one-time dashboard
-   step.
-3. ~~Register a Shopify Partner app.~~ **Partially done** — real
-   `client_id` (`d3f114303ecd6de5e650b4bdb96106f6`) and `dev_store_url`
-   (`box-craft-demo.myshopify.com`) are now in `shopify.app.toml`, and
-   `application_url`/`redirect_urls` get filled in automatically by
-   `setup-cloudflare.mjs` above. Still needed: push that config to the
-   real Partner app with `shopify login` + `shopify app deploy` (out of
-   scope for a script that assumes only a Cloudflare login) — this
-   registers the real redirect URL and the `app/uninstalled` webhook
-   subscription with Shopify. Also still open: the Cart Transform
-   function's runtime adapter shape in `run.ts` needs verification
-   against a real `shopify app generate extension` scaffold or
-   `shopify app deploy`.
+2. ~~Deploy `workers/webhook-consumer` and `workers/app-backend`, create
+   the `SHOP_TOKENS` namespace, and set both Workers' secrets.~~ **Done**
+   via `scripts/setup-cloudflare.sh`/`.mjs` (after an initial ordering bug
+   was found and fixed — `wrangler secret put` needs a Worker to already
+   have a deployed version, so the script now deploys before setting
+   secrets). Both Workers are live:
+   `workers/app-backend` at `https://box-craft-app-backend.adam-bourg.workers.dev`,
+   `workers/webhook-consumer` deployed with `SHOPIFY_WEBHOOK_SECRET` set.
+   `SHOP_TOKENS` KV namespace id `0a36a18ea3344074a5bec4e4c2575f1e`.
+   Still not scriptable even with a Cloudflare login: Git-connecting
+   either Worker to a Workers Build project for auto-deploy-on-push
+   (dashboard-only, no CLI/API for it) — both are live either way via
+   direct deploy, just not auto-redeployed on future pushes until that
+   one-time dashboard step happens.
+3. ~~Register a Shopify Partner app.~~ **Mostly done** — real `client_id`,
+   `dev_store_url`, `application_url`
+   (`https://box-craft-app-backend.adam-bourg.workers.dev`), and
+   `redirect_urls` are all in `shopify.app.toml`. Still needed: push that
+   config to the real Partner app with `shopify login` +
+   `cd shopify-app && shopify app deploy` (out of scope for a script that
+   assumes only a Cloudflare login) — until this runs, Shopify doesn't
+   actually know about this redirect URL yet, so a real install attempt
+   will fail with a redirect_uri mismatch even though the Worker itself is
+   live. This also registers the `app/uninstalled` webhook subscription.
+   Also still open: the Cart Transform function's runtime adapter shape in
+   `run.ts` needs verification against a real
+   `shopify app generate extension` scaffold or `shopify app deploy`.
 4. **Set up a dev store with 2+ locations** with split inventory to
    actually exercise the full/partial/zero-overlap guardrail scenarios —
    nothing here has been checked against real Shopify inventory data yet.
