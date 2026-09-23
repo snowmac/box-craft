@@ -145,7 +145,11 @@ succeeded, and cleaning up the stored token on `app/uninstalled`.
   accepted** — the function runs and returns a valid merge, but Shopify
   silently doesn't apply it until the parent product is published to the
   Online Store channel. Untracked inventory on the parent is fine. Store
-  setup still needs to publish it (open item in the work log).
+  setup now creates it `UNLISTED` and publishes it (scope
+  `write_publications`). Remaining exposure: its direct URL still works,
+  so a shopper who finds it could add the $0 parent on its own — decide
+  whether that needs guarding (e.g. a price on the parent, if Shopify
+  ignores parent price in merges — unverified).
 
 - **Bundle pricing via `percentageDecrease` (corrected 2026-09-23)**: the
   plan and Technical Spec said the merged line's price comes from

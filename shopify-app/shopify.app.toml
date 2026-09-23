@@ -35,8 +35,10 @@ api_version = "2026-01"
 # reads variant data, and app-backend creates the hidden "BoxCraft Bundle"
 # parent product at install. write_cart_transforms: app-backend activates
 # the Cart Transform function on each store (cartTransformCreate).
+# write_publications: app-backend publishes the bundle parent product to
+# the Online Store — Shopify skips linesMerge for an unpublished parent.
 # Keep in sync with SHOPIFY_SCOPES in workers/app-backend/wrangler.toml.
-scopes = "read_inventory,read_locations,write_products,write_cart_transforms"
+scopes = "read_inventory,read_locations,write_products,write_cart_transforms,write_publications"
 
 [auth]
 redirect_urls = [ "https://box-craft-app-backend.adam-bourg.workers.dev/auth/callback" ]

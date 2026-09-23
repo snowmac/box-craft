@@ -4,7 +4,7 @@ compatibility_date = "2026-09-22"
 
 [vars]
 SHOPIFY_CLIENT_ID = "d3f114303ecd6de5e650b4bdb96106f6"
-SHOPIFY_SCOPES = "read_inventory,read_locations,write_products,write_cart_transforms"
+SHOPIFY_SCOPES = "read_inventory,read_locations,write_products,write_cart_transforms,write_publications"
 # Same value as shopify.app.toml's application_url.
 APP_URL = "https://box-craft-app-backend.adam-bourg.workers.dev"
 

@@ -322,6 +322,17 @@ and checkout now show **one "BoxCraft Bundle" line at $2,779.85 with the
 4 boards as components**. v1's core flow works end to end on the dev
 store.
 
+### Store setup publishes the bundle product
+
+`ensureStoreSetup` now creates the bundle product as `UNLISTED` and
+publishes it to the Online Store publication (found by catalog title),
+and publishes an existing unpublished one — covering installs from before
+this fix. New scope `write_publications`. Verified by hand first on
+box-craft-demo: with the parent set to UNLISTED the merge still applies,
+and the product drops out of `/collections/all`; it still appeared in
+search suggestions right after the change (likely index lag — unverified).
+Direct link `/products/boxcraft-bundle` stays reachable by design.
+
 ## Where things stand now
 
 **Works end to end on the dev store:** picker → guardrail → add to cart →
@@ -334,11 +345,6 @@ bindings/secrets. Shopify app version `boxcraft-bundles-2` released.
 **Not yet done** (see `assumptions.md` for full detail):
 - Managed Pricing plan configuration in the Partner Dashboard.
 - Pick-N block not yet added to the dev store's theme.
-- **Store setup must publish the bundle product.** Done by hand on
-  box-craft-demo; the app's `ensureStoreSetup` still creates it
-  unpublished, so a fresh install won't merge. Needs `write_publications`
-  scope + `publishablePublish` to the Online Store publication, and a
-  decision on hiding the product's own storefront page.
 - No bundle discount: the picker's `_bundle_price` equals the list
   total, so the Cart Transform merges at list price.
 - **Embedded admin page redesign (scoped, not started).** The page at

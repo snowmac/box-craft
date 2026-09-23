@@ -3,12 +3,16 @@ import assert from "node:assert/strict";
 import { ensureStoreSetup, type AdminClient } from "../src/store-setup.ts";
 
 const VARIANT = "gid://shopify/ProductVariant/42";
+const PRODUCT = "gid://shopify/Product/7";
+const ONLINE_STORE = "gid://shopify/Publication/1";
 
 interface FakeState {
 	cartTransforms: Array<{ id: string; metafield: { value: string } | null }>;
 	bundleProductVariant: string | null;
 	calls: string[];
 	userErrors?: Array<{ field: string[]; message: string }>;
+	published?: boolean;
+	createdStatus?: string;
 }
 
 function fakeClient(state: FakeState): AdminClient {
@@ -21,14 +25,32 @@ function fakeClient(state: FakeState): AdminClient {
 			case "BoxcraftBundleProduct":
 				return {
 					products: {
-						nodes: state.bundleProductVariant ? [{ variants: { nodes: [{ id: state.bundleProductVariant }] } }] : [],
+						nodes: state.bundleProductVariant
+							? [{ id: PRODUCT, variants: { nodes: [{ id: state.bundleProductVariant }] } }]
+							: [],
 					},
 				};
+			case "BoxcraftOnlineStorePublication":
+				return {
+					publications: {
+						nodes: [
+							{ id: "gid://shopify/Publication/2", catalog: { title: "Point of Sale" } },
+							{ id: ONLINE_STORE, catalog: { title: "Online Store" } },
+						],
+					},
+				};
+			case "BoxcraftBundlePublished":
+				return { product: { publishedOnPublication: !!state.published } };
+			case "BoxcraftPublishBundleProduct":
+				assert.equal((variables.input as Array<{ publicationId: string }>)[0].publicationId, ONLINE_STORE);
+				state.published = true;
+				return { publishablePublish: { userErrors: [] } };
 			case "BoxcraftCreateBundleProduct":
 				state.bundleProductVariant = VARIANT;
+				state.createdStatus = (variables.product as { status: string }).status;
 				return {
 					productCreate: {
-						product: { variants: { nodes: [{ id: VARIANT }] } },
+						product: { id: PRODUCT, variants: { nodes: [{ id: VARIANT }] } },
 						userErrors: state.userErrors ?? [],
 					},
 				};
@@ -52,12 +74,18 @@ test("fresh store: creates the bundle product, then activates the function point
 	const state: FakeState = { cartTransforms: [], bundleProductVariant: null, calls: [] };
 	await ensureStoreSetup(fakeClient(state));
 	assert.deepEqual(state.calls, [
-		"BoxcraftCartTransforms",
 		"BoxcraftBundleProduct",
 		"BoxcraftCreateBundleProduct",
+		"BoxcraftOnlineStorePublication",
+		"BoxcraftBundlePublished",
+		"BoxcraftPublishBundleProduct",
+		"BoxcraftCartTransforms",
 		"BoxcraftCreateCartTransform",
 	]);
 	assert.equal(state.cartTransforms[0].metafield?.value, VARIANT);
+	// Unlisted: reachable by the merge but not in search/collections.
+	assert.equal(state.createdStatus, "UNLISTED");
+	assert.equal(state.published, true);
 });
 
 test("reinstall: reuses the existing tagged bundle product instead of creating another", async () => {
@@ -67,14 +95,29 @@ test("reinstall: reuses the existing tagged bundle product instead of creating a
 	assert.equal(state.cartTransforms[0].metafield?.value, VARIANT);
 });
 
-test("already set up: makes no changes", async () => {
+test("already set up: only reads, makes no changes", async () => {
 	const state: FakeState = {
 		cartTransforms: [{ id: "gid://shopify/CartTransform/1", metafield: { value: VARIANT } }],
 		bundleProductVariant: VARIANT,
+		published: true,
 		calls: [],
 	};
 	await ensureStoreSetup(fakeClient(state));
-	assert.deepEqual(state.calls, ["BoxcraftCartTransforms"]);
+	assert.deepEqual(state.calls, ["BoxcraftBundleProduct", "BoxcraftOnlineStorePublication", "BoxcraftBundlePublished", "BoxcraftCartTransforms"]);
+});
+
+test("existing store whose bundle product was never published gets it published", async () => {
+	// Shopify silently skips linesMerge when the parent product isn't on the
+	// Online Store channel — the case for installs from before this fix.
+	const state: FakeState = {
+		cartTransforms: [{ id: "gid://shopify/CartTransform/1", metafield: { value: VARIANT } }],
+		bundleProductVariant: VARIANT,
+		published: false,
+		calls: [],
+	};
+	await ensureStoreSetup(fakeClient(state));
+	assert.equal(state.published, true);
+	assert.ok(!state.calls.includes("BoxcraftCreateCartTransform"));
 });
 
 test("function active but metafield missing: sets the metafield rather than creating a second transform", async () => {
