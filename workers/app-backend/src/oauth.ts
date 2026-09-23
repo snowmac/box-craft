@@ -51,6 +51,30 @@ export function buildTokenExchangeRequest(
 	};
 }
 
+// Token exchange: trades the session token Shopify hands the embedded app
+// for an offline access token. This is how installs via Shopify's managed
+// installation (the default when scopes live in shopify.app.toml) get a
+// token, since they never go through /auth.
+// https://shopify.dev/docs/apps/build/authentication-authorization/access-tokens/token-exchange
+export function buildOfflineTokenExchangeRequest(
+	shop: string,
+	clientId: string,
+	clientSecret: string,
+	sessionToken: string,
+): TokenExchangeRequest {
+	return {
+		url: `https://${shop}/admin/oauth/access_token`,
+		body: JSON.stringify({
+			client_id: clientId,
+			client_secret: clientSecret,
+			grant_type: "urn:ietf:params:oauth:grant-type:token-exchange",
+			subject_token: sessionToken,
+			subject_token_type: "urn:ietf:params:oauth:token-type:id_token",
+			requested_token_type: "urn:shopify:params:oauth:token-type:offline-access-token",
+		}),
+	};
+}
+
 // Where a merchant lands after a successful install — inside the embedded
 // app in Shopify admin, not on this Worker's bare URL.
 export function buildEmbeddedAppUrl(shop: string, clientId: string): string {

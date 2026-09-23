@@ -5,6 +5,7 @@ import {
 	buildAuthorizeUrl,
 	buildTokenExchangeRequest,
 	buildEmbeddedAppUrl,
+	buildOfflineTokenExchangeRequest,
 } from "../src/oauth.ts";
 
 test("isValidShopDomain accepts a real myshopify.com host", () => {
@@ -58,4 +59,17 @@ test("buildTokenExchangeRequest targets the correct shop and carries the code", 
 test("buildEmbeddedAppUrl points into Shopify admin, not this Worker", () => {
 	const url = buildEmbeddedAppUrl("box-craft-demo.myshopify.com", "client123");
 	assert.equal(url, "https://box-craft-demo.myshopify.com/admin/apps/client123");
+});
+
+test("buildOfflineTokenExchangeRequest trades a session token for an offline access token", () => {
+	const req = buildOfflineTokenExchangeRequest("box-craft-demo.myshopify.com", "client123", "secret456", "the.id.token");
+	assert.equal(req.url, "https://box-craft-demo.myshopify.com/admin/oauth/access_token");
+	assert.deepEqual(JSON.parse(req.body), {
+		client_id: "client123",
+		client_secret: "secret456",
+		grant_type: "urn:ietf:params:oauth:grant-type:token-exchange",
+		subject_token: "the.id.token",
+		subject_token_type: "urn:ietf:params:oauth:token-type:id_token",
+		requested_token_type: "urn:shopify:params:oauth:token-type:offline-access-token",
+	});
 });

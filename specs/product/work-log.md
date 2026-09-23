@@ -219,6 +219,19 @@ Two more deploy failures fixed on the way:
 function, and the Pick-N theme app extension are all registered with
 Shopify.
 
+## 2026-09-23 — Install worked, but no token was stored
+
+@adam.bourg installed the app on `box-craft-demo` from the Dev Dashboard;
+the embedded page loaded, but `SHOP_TOKENS` stayed empty. Cause: with
+scopes declared in `shopify.app.toml`, Shopify uses **managed
+installation** — it never calls `/auth`, and instead loads `/` with a
+signed `id_token` the app must trade for an access token (token exchange).
+The shell ignored it. Added `src/session-token.ts` (HS256 JWT
+verification: signature, `aud`, `exp`/`nbf`, `dest` shop) and a
+token-exchange request for an offline token; `/` now does the exchange
+the first time it sees a shop. 10 new tests. `/auth` stays as a fallback
+for installs from a direct link.
+
 ## Where things stand now
 
 **Live:** Guardrail Worker (`box-craft`, public, CORS-enabled), webhook

@@ -182,6 +182,12 @@ succeeded, and cleaning up the stored token on `app/uninstalled`.
   tokens are secrets; deliberately not mixed into the same namespace as
   the bitmap data.
 
+- **Token acquisition via token exchange, only once per shop**: `/`
+  exchanges Shopify's `id_token` for an offline token only when no token is
+  stored for that shop yet. If scopes change later, the stored token won't
+  be refreshed until the shop reinstalls (uninstall clears it) — fine for
+  v1's fixed read-only scopes, revisit if scopes grow.
+
 - **Embedded admin shell is intentionally minimal**: just confirms install
   succeeded and points the merchant at the theme editor to add the Pick-N
   block. No settings UI, since v1 has no merchant-facing config beyond

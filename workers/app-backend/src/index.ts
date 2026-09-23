@@ -3,10 +3,12 @@ import { verifyShopifyOAuthHmac } from "../../../shared/oauth-hmac.ts";
 import {
 	buildAuthorizeUrl,
 	buildEmbeddedAppUrl,
+	buildOfflineTokenExchangeRequest,
 	buildTokenExchangeRequest,
 	generateState,
 	isValidShopDomain,
 } from "./oauth.ts";
+import { verifySessionToken } from "./session-token.ts";
 
 export interface Env {
 	SHOP_TOKENS: KVNamespace;
@@ -160,11 +162,20 @@ async function handleUninstalled(request: Request, env: Env): Promise<Response> 
 	return new Response("ok", { status: 200 });
 }
 
-function handleEmbeddedShell(_url: URL, env: Env): Response {
+async function handleEmbeddedShell(url: URL, env: Env): Promise<Response> {
+	// Managed installation (scopes in shopify.app.toml) never calls /auth:
+	// Shopify loads this page with a signed id_token instead, and the app is
+	// expected to trade it for an access token. Do that the first time we
+	// see a shop.
+	const installed = await ensureShopToken(url.searchParams.get("id_token"), env);
+
 	// Minimal shell: no merchant config here for v1 — the Pick-N picker's
 	// settings live in the theme editor, and guardrail rules are
 	// feature-gated by tier rather than configured per-store (see the
 	// Pricing plan). This just confirms the install succeeded.
+	const message = installed
+		? "<h1>BoxCraft is installed</h1>\n  <p>Add the Pick-N Picker block to a product page from the theme editor to get started.</p>"
+		: "<h1>BoxCraft setup didn't finish</h1>\n  <p>Reload this page to try again. If it keeps happening, reinstall the app.</p>";
 	const html = `<!DOCTYPE html>
 <html>
 <head>
@@ -174,14 +185,48 @@ function handleEmbeddedShell(_url: URL, env: Env): Response {
   <meta name="shopify-api-key" content="${env.SHOPIFY_CLIENT_ID}">
 </head>
 <body>
-  <h1>BoxCraft is installed</h1>
-  <p>Add the Pick-N Picker block to a product page from the theme editor to get started.</p>
+  ${message}
 </body>
 </html>`;
 
 	return new Response(html, {
 		headers: { "Content-Type": "text/html; charset=utf-8" },
 	});
+}
+
+// Returns whether the shop has a stored access token after this call.
+async function ensureShopToken(idToken: string | null, env: Env): Promise<boolean> {
+	if (!idToken) return false;
+	const session = await verifySessionToken(idToken, env.SHOPIFY_CLIENT_ID, env.SHOPIFY_CLIENT_SECRET);
+	if (!session) return false;
+
+	if (await env.SHOP_TOKENS.get(shopTokenKey(session.shop))) return true;
+
+	const tokenRequest = buildOfflineTokenExchangeRequest(
+		session.shop,
+		env.SHOPIFY_CLIENT_ID,
+		env.SHOPIFY_CLIENT_SECRET,
+		idToken,
+	);
+	const tokenRes = await fetch(tokenRequest.url, {
+		method: "POST",
+		headers: { "Content-Type": "application/json", Accept: "application/json" },
+		body: tokenRequest.body,
+	});
+	if (!tokenRes.ok) {
+		console.error(`token exchange failed for ${session.shop}: ${tokenRes.status}`);
+		return false;
+	}
+
+	const { access_token: accessToken, scope } = (await tokenRes.json()) as {
+		access_token: string;
+		scope: string;
+	};
+	await env.SHOP_TOKENS.put(
+		shopTokenKey(session.shop),
+		JSON.stringify({ accessToken, scope, installedAt: new Date().toISOString() }),
+	);
+	return true;
 }
 
 function shopTokenKey(shop: string): string {
