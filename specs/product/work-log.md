@@ -196,6 +196,14 @@ picker fails open):
   `Access-Control-Allow-Origin: *` (`src/cors.ts`, 3 new tests), verified
   under `wrangler dev`.
 
+@adam.bourg then switched `/check`'s Access scope to "Previews only"
+(production is public, preview builds still require login). The CORS fix
+still wasn't live: the `box-craft` Workers Build was still watching the
+old `claude/busy-ramanujan-1t7enc` branch, so nothing pushed to `main`
+since the branch switch had deployed. Production branch changed to `main`
+in Settings → Builds; the next push deployed in ~2 minutes and `/check`
+now answers preflights publicly with `Access-Control-Allow-Origin: *`.
+
 ## Where things stand now
 
 **Live:** Guardrail Worker (`box-craft`), webhook consumer, app-backend —
@@ -206,7 +214,6 @@ all three Cloudflare Workers deployed with real bindings/secrets.
   redirect URL and `app/uninstalled` webhook subscription with Shopify.
   Without this, an install attempt fails with a redirect_uri mismatch
   even though the Worker is live.
-- Remove Cloudflare Access from the `box-craft` Worker's workers.dev URL.
 - Managed Pricing plan configuration in the Partner Dashboard.
 - Dev store needs 2+ locations with split test inventory (currently just
   created, not yet configured this way).
