@@ -272,6 +272,13 @@ when a stored token doesn't cover current scopes. API shapes checked by
 introspecting the live store's Admin API. 11 new tests (31 in
 app-backend), function rebuilt and re-run.
 
+Released as `boxcraft-bundles-3`. On the next admin load the app
+re-exchanged its token (now `read_inventory,read_locations,
+write_cart_transforms,write_products`) and store setup ran cleanly:
+"BoxCraft Bundle" product created, Cart Transform
+`gid://shopify/CartTransform/146080110` active with the parent variant in
+its `$app` metafield.
+
 ## Where things stand now
 
 **Live:** Installed on `box-craft-demo` with a stored access token;
@@ -281,8 +288,6 @@ bindings/secrets. Shopify app version `boxcraft-bundles-2` released.
 
 **Not yet done** (see `assumptions.md` for full detail):
 - Managed Pricing plan configuration in the Partner Dashboard.
-- Cart Transform activation (store setup) not yet run on the dev store —
-  needs `shopify app deploy` for the new scopes, then an admin reload.
 - Pick-N block not yet added to the dev store's theme.
 - No bundle discount: the picker's `_bundle_price` equals the list
   total, so the Cart Transform merges at list price.
