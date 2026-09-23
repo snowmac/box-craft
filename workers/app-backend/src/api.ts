@@ -3,7 +3,9 @@ import { getShopConfig, upsertShopConfig, listBoxes, upsertBox, deleteBox, type 
 import { validateBoxInput, validateConfigInput, toBox, isValidHandle, type ConfigInput } from "./validate.ts";
 import { writeBoxesMetafields } from "./boxes-metafield.ts";
 import { adminClient } from "./admin-client.ts";
-import { runSync } from "./sync.ts";
+import { runSync, getLastSyncRun } from "./sync.ts";
+import { checkSetupStatus } from "./setup-status.ts";
+import { loadPerformanceMetrics, type PerformanceWindow } from "./performance.ts";
 import type { D1Like, EventContext } from "../../../shared/events.ts";
 
 export interface ApiEnv {
@@ -13,6 +15,8 @@ export interface ApiEnv {
 	DB: D1Like;
 	LOCATION_BITMAP: KVNamespace;
 }
+
+const VALID_PERFORMANCE_WINDOWS: PerformanceWindow[] = [7, 30];
 
 interface AuthedShop {
 	shop: string;
@@ -43,6 +47,9 @@ export async function handleApi(request: Request, url: URL, env: ApiEnv, ctx: Ev
 
 	if (url.pathname === "/api/overview" && request.method === "GET") {
 		return handleOverview(authed, env);
+	}
+	if (url.pathname === "/api/performance" && request.method === "GET") {
+		return handlePerformance(url, authed, env);
 	}
 	if (url.pathname === "/api/config" && request.method === "GET") {
 		const config = await getShopConfig(env.DB, authed.shop);
@@ -75,16 +82,60 @@ export async function handleApi(request: Request, url: URL, env: ApiEnv, ctx: Ev
 	return new Response("Not found", { status: 404 });
 }
 
+// T12: Shopify Admin API deep link straight to the theme editor with the
+// Pick-N block pre-added — the plan's documented fallback for a "block on
+// a live theme?" check that would otherwise need the read_themes scope
+// (another App Store re-consent cycle) just to answer a checklist item.
+function themeBlockDeepLink(shop: string, clientId: string): string {
+	return `https://${shop}/admin/themes/current/editor?template=product&addAppBlockId=${clientId}/pick-n-picker&target=mainSection`;
+}
+
 async function handleOverview(authed: AuthedShop, env: ApiEnv): Promise<Response> {
 	const record = await env.SHOP_TOKENS.get<{ installedAt: string; setupAt?: string }>(
 		`shop:${authed.shop}`,
 		"json",
 	);
+
+	// Read-only Admin API checks — best-effort. A token that's gone stale
+	// (revoked scope, uninstalled mid-request) shouldn't 500 the whole
+	// overview; the checklist just shows those two items unconfirmed.
+	let bundleProductPublished = false;
+	let cartTransformActive = false;
+	try {
+		const status = await checkSetupStatus(adminClient(authed.shop, authed.accessToken));
+		bundleProductPublished = status.bundleProductPublished;
+		cartTransformActive = status.cartTransformActive;
+	} catch {
+		// Left false — the admin page shows these as not-yet-confirmed.
+	}
+
+	const lastSync = await getLastSyncRun(env.DB, authed.shop).catch(() => null);
+
 	return Response.json({
 		shop: authed.shop,
 		installed: !!record,
 		setupAt: record?.setupAt ?? null,
+		tokenOk: !!record,
+		bundleProductPublished,
+		cartTransformActive,
+		lastSync,
+		themeBlockDeepLink: themeBlockDeepLink(authed.shop, env.SHOPIFY_CLIENT_ID),
 	});
+}
+
+function isValidPerformanceWindow(value: unknown): value is PerformanceWindow {
+	return typeof value === "number" && VALID_PERFORMANCE_WINDOWS.includes(value as PerformanceWindow);
+}
+
+async function handlePerformance(url: URL, authed: AuthedShop, env: ApiEnv): Promise<Response> {
+	const daysParam = url.searchParams.get("days");
+	const days = daysParam === null ? 7 : Number(daysParam);
+	if (!isValidPerformanceWindow(days)) {
+		return Response.json({ error: "days must be 7 or 30" }, { status: 400 });
+	}
+
+	const metrics = await loadPerformanceMetrics(env.DB, authed.shop, days);
+	return Response.json(metrics);
 }
 
 async function handlePutConfig(request: Request, authed: AuthedShop, env: ApiEnv): Promise<Response> {

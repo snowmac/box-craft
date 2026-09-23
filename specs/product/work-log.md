@@ -767,6 +767,99 @@ check on `box-craft-demo` once the cards have real content — deferring
 the visual check to then rather than checking an intentionally
 placeholder-only shell twice.
 
+**T12 done — Admin page cards.** All five cards from T11's shell now
+have real behavior, still plain HTML/CSS/vanilla JS.
+
+New backend pieces feeding the cards:
+- `src/setup-status.ts` — `checkSetupStatus(admin)`, read-only Admin
+  API checks (bundle product published to Online Store, a Cart
+  Transform exists) — same "find the Online Store publication by
+  channel handle" logic as `store-setup.ts`'s `ensurePublishedToOnlineStore`,
+  but never creates or modifies anything. `store-setup.ts` now exports
+  `BUNDLE_PRODUCT_TAG` so both share the one tag constant.
+- `src/sync.ts` gained `getLastSyncRun(db, shop)` — the most recent
+  `sync_runs` row regardless of outcome, identified the same
+  `(shop, started_at)` way `finishSyncRun` already does.
+- `src/performance.ts` (new) — `computePerformanceMetrics(events,
+  windowDays, now)`, pure: aggregates raw `events` rows into bundles
+  added/sold, revenue, add→sold conversion (0 with no adds, not NaN),
+  guardrail checks, % blocked, fail-opens, plus a day-bucketed series
+  per metric for D17's sparklines. `loadPerformanceMetrics` is the
+  thin D1-reading wrapper (`SELECT ... FROM events WHERE shop=? AND
+  ts>=?`, aggregation done in JS rather than SQL so it stays testable
+  without a real SQLite instance).
+- `GET /api/overview` expanded: `tokenOk`, `bundleProductPublished`,
+  `cartTransformActive`, `lastSync`, and `themeBlockDeepLink` (the
+  plan's documented fallback for the "Pick-N block on a live theme?"
+  checklist item — a deep link straight into the theme editor with the
+  block pre-added, avoiding the `read_themes` scope entirely rather
+  than trying the Admin API check and falling back). The two Admin API
+  checks are wrapped so a stale/revoked token degrades to both
+  showing unconfirmed rather than 500ing the whole overview.
+- `GET /api/performance?days=7|30` (default 7, 400 on anything else).
+
+Client side (`admin.js.ts`): a `boxcraftFetch()` helper wraps every
+`/api/*` call with `await shopify.idToken()` → `Authorization: Bearer`
+(D14), used by all five cards uniformly. Setup and Inventory sync
+share one `/api/overview` fetch. Performance has a 7/30-day toggle
+that re-fetches and re-renders; each stat gets a tiny inline SVG
+sparkline (D17 — `sparkline()`, no chart library, ~15 lines).
+Location guardrail: a checkbox + two radios, each `change` event PUTs
+`/api/config` directly (no separate save button) with a small "Saved"
+confirmation. Boxes: a table plus an inline create/edit form — a
+discount-type radio group toggles the percent field vs. a dynamic
+tiered-rows editor (add/remove rows), delete asks
+`confirm()` first, and each handle has a copy-to-clipboard button.
+"Sync now" disables its button, `POST`s `/api/sync`, then re-fetches
+`/api/overview` once to reflect the new state — the plan's "polls
+/api/overview" wording, interpreted as a single re-fetch after
+completion rather than an interval-polling loop, since `runSync` (T9)
+already runs to completion before responding rather than returning
+immediately with a "running" status to poll against. All merchant-
+supplied text (box titles, handles) goes through a small `escapeHtml`
+before landing in `innerHTML`.
+
+Consistent with the rest of the codebase's TDD approach, the real
+*logic* (aggregation math, setup checks, sync-row lookups) is
+server-side and fully unit-tested; `admin.js`'s own DOM wiring isn't
+unit-tested, matching the picker's established precedent (pure
+functions tested, DOM glue reviewed by eye). Its one real bug caught
+before commit: the top-level code originally called `document`/
+`window` directly with no guard, so — unlike pick-n-picker.js, which
+already wraps its own top-level DOM access — loading this module
+outside a browser threw immediately. Fixed by wrapping the retry-button
+wiring and the card-loading kickoff in the same `typeof document !==
+"undefined"` guard pick-n-picker.js uses, which is also what makes it
+possible to load `ADMIN_JS` directly in a Node test at all. Added a
+small syntax/runs-without-a-DOM smoke test (`admin-js-syntax.test.ts`,
+via `node:vm`) specifically because `ADMIN_JS` is an opaque string to
+TypeScript — tsc never parses its contents, so nothing else would have
+caught a broken template literal before it shipped.
+
+CSS gained styles for the checklist, sparklines, stat grid, table,
+form controls, fieldset/radio/switch, and the tiered-discount rows —
+4.5 KB total (admin.css.ts + admin.js.ts together, ~21 KB — no
+explicit budget for this surface, unlike the picker's 3 KB rule, but
+kept deliberately plain).
+
+24 new tests: 5 for `setup-status.ts`, 2 for `getLastSyncRun`, 8 for
+`performance.ts`, 2 for the `/admin.js` syntax/DOM-guard smoke test,
+plus `api.test.ts` gained a properly fetch-mocked `/api/overview` test
+(replacing one that, with the new Admin-API-backed overview, would
+otherwise have made an unmocked live network call — caught and fixed
+before it ever ran against a real domain), a "never 500s on a stale
+token" test, and three `/api/performance` tests. 199 tests across the
+three Worker packages (root 65, webhook-consumer 19, app-backend 115),
+typecheck clean everywhere.
+
+Not verified in this sandbox, same limitation as T11: that the
+finished cards actually render and behave correctly inside Shopify's
+admin iframe on `box-craft-demo`, and that there are no browser
+console errors — no way to load a real embedded app iframe here. This
+is the plan's own accept criteria for T12; needs checking from a
+machine with real Shopify access before considering the admin page
+done.
+
 ## Where things stand now (updated 2026-09-23, end of day)
 
 ### Done and verified on the dev store (`box-craft-demo`)

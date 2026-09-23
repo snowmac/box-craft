@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { runSync, type SyncEnv } from "../src/sync.ts";
+import { runSync, getLastSyncRun, type SyncEnv } from "../src/sync.ts";
 
 const SHOP = "box-craft-demo.myshopify.com";
 
@@ -200,4 +200,36 @@ test("a D1 outage (unbound DB) still lets the sync run and write KV", async () =
 
 	assert.equal(result.status, "ok");
 	assert.equal(puts.length, 2);
+});
+
+// A separate, purpose-built fake for getLastSyncRun's own query shape —
+// the fakeD1() above is tailored to runSync's guard-check query
+// specifically (different bound args), so reusing it here would
+// misinterpret this query's args.
+function fakeD1WithRow(row: {
+	started_at: number;
+	finished_at: number | null;
+	variants: number | null;
+	status: string;
+} | null) {
+	return {
+		prepare: (query: string) => ({
+			bind: (..._args: unknown[]) => ({
+				run: async () => {},
+				first: async <T>() => (query.includes("FROM sync_runs") ? (row as T | null) : null),
+				all: async <T>() => ({ results: [] as T[] }),
+			}),
+		}),
+	};
+}
+
+test("getLastSyncRun returns null when a shop has never synced", async () => {
+	const result = await getLastSyncRun(fakeD1WithRow(null), SHOP);
+	assert.equal(result, null);
+});
+
+test("getLastSyncRun returns the most recent run's fields", async () => {
+	const db = fakeD1WithRow({ started_at: 1000, finished_at: 1500, variants: 26, status: "ok" });
+	const result = await getLastSyncRun(db, SHOP);
+	assert.deepEqual(result, { startedAt: 1000, finishedAt: 1500, variants: 26, status: "ok" });
 });

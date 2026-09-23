@@ -18,7 +18,8 @@ export type AdminClient = (
 
 // Must match the handle in shopify-app/extensions/cart-transform.
 const FUNCTION_HANDLE = "boxcraft-cart-transform";
-const BUNDLE_PRODUCT_TAG = "boxcraft-bundle-parent";
+// Exported for setup-status.ts's read-only checks (T12's Setup card).
+export const BUNDLE_PRODUCT_TAG = "boxcraft-bundle-parent";
 // "$app" = the app-reserved namespace; the function's input query reads
 // cartTransform.metafield(key:) with no namespace, which resolves to it.
 const METAFIELD = { namespace: "$app", key: "bundle_parent_variant_id", type: "single_line_text_field" };

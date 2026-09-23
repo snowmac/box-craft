@@ -11,6 +11,8 @@ export const ADMIN_CSS = `:root {
   --bc-radius: 16px;
   --bc-danger-bg: #fef3f2;
   --bc-danger-text: #b42318;
+  --bc-ok-text: #1a7f37;
+  --bc-accent: #202223;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 
@@ -23,6 +25,8 @@ export const ADMIN_CSS = `:root {
     --bc-text-secondary: #a3a3a3;
     --bc-danger-bg: #3a1f1d;
     --bc-danger-text: #ff8a80;
+    --bc-ok-text: #56d364;
+    --bc-accent: #f2f2f2;
   }
 }
 
@@ -103,5 +107,165 @@ body {
   .cards {
     grid-template-columns: 1fr;
   }
+}
+
+/* T12: card contents */
+
+.hint {
+  color: var(--bc-text-secondary);
+  font-size: 0.8125rem;
+}
+
+.checklist {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.check {
+  display: inline-block;
+  width: 1.25em;
+  text-align: center;
+  font-weight: 700;
+}
+
+.check--ok {
+  color: var(--bc-ok-text);
+}
+
+.check--pending {
+  color: var(--bc-text-secondary);
+}
+
+.toggle-group {
+  display: inline-flex;
+  border: 1px solid var(--bc-border);
+  border-radius: 8px;
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+
+.toggle {
+  border: none;
+  border-right: 1px solid var(--bc-border);
+  background: var(--bc-surface);
+  color: var(--bc-text);
+  padding: 6px 14px;
+  cursor: pointer;
+  font-size: 0.8125rem;
+  font-family: inherit;
+}
+
+.toggle:last-child {
+  border-right: none;
+}
+
+.toggle.is-active {
+  background: var(--bc-accent);
+  color: var(--bc-surface);
+}
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 16px;
+}
+
+.stat__value {
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.stat__label {
+  color: var(--bc-text-secondary);
+  font-size: 0.75rem;
+}
+
+.sparkline {
+  width: 80px;
+  height: 24px;
+  margin-top: 4px;
+}
+
+.sparkline polyline {
+  fill: none;
+  stroke: var(--bc-accent);
+  stroke-width: 2;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+  margin-bottom: 12px;
+}
+
+.table th,
+.table td {
+  text-align: left;
+  padding: 8px;
+  border-bottom: 1px solid var(--bc-border);
+}
+
+.button--icon {
+  padding: 2px 6px;
+  font-size: 0.75rem;
+}
+
+.box-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--bc-border);
+}
+
+.box-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.8125rem;
+}
+
+.box-form input[type="text"],
+.box-form input[type="number"] {
+  padding: 6px 8px;
+  border: 1px solid var(--bc-border);
+  border-radius: 6px;
+  background: var(--bc-surface);
+  color: var(--bc-text);
+  font: inherit;
+}
+
+.fieldset {
+  border: 1px solid var(--bc-border);
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.fieldset legend {
+  padding: 0 4px;
+  font-size: 0.75rem;
+  color: var(--bc-text-secondary);
+}
+
+.radio,
+.switch {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 0.8125rem;
+  margin-bottom: 6px;
+}
+
+.tier-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  margin-bottom: 8px;
 }
 `;

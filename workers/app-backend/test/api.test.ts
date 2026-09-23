@@ -195,14 +195,54 @@ test("a valid token for a shop with no stored access token is rejected with 401"
 	assert.equal(res.status, 401);
 });
 
-test("GET /api/overview reports installed status for an authenticated shop", async () => {
+test("GET /api/overview reports installed status, setup checklist, and last sync for an authenticated shop", async () => {
 	const env = baseEnv();
-	const req = request("/api/overview");
-	const res = await handleApi(req, new URL(req.url), env, mockCtx());
-	assert.equal(res.status, 200);
-	const body = (await res.json()) as any;
-	assert.equal(body.shop, SHOP);
-	assert.equal(body.installed, true);
+
+	await withMockedFetch(
+		(url) => {
+			// Only ever hit by checkSetupStatus's Admin API calls here — never
+			// a real network request, and never fetches for boxes/config since
+			// this route doesn't touch them.
+			assert.match(url, /\/admin\/api\//);
+			return Promise.resolve(
+				Response.json({
+					data: {
+						products: { nodes: [] },
+						cartTransforms: { nodes: [{ id: "gid://shopify/CartTransform/1" }] },
+					},
+				}),
+			);
+		},
+		async () => {
+			const req = request("/api/overview");
+			const res = await handleApi(req, new URL(req.url), env, mockCtx());
+			assert.equal(res.status, 200);
+			const body = (await res.json()) as any;
+			assert.equal(body.shop, SHOP);
+			assert.equal(body.installed, true);
+			assert.equal(body.tokenOk, true);
+			assert.equal(body.bundleProductPublished, false); // no product found in the mock
+			assert.equal(body.cartTransformActive, true);
+			assert.equal(body.lastSync, null); // fakeD1 has no sync_runs rows yet
+			assert.match(body.themeBlockDeepLink, /addAppBlockId=client123\/pick-n-picker/);
+		},
+	);
+});
+
+test("GET /api/overview never 500s when the Admin API checks fail (e.g. a stale token)", async () => {
+	const env = baseEnv();
+
+	await withMockedFetch(
+		async () => new Response("unauthorized", { status: 401 }),
+		async () => {
+			const req = request("/api/overview");
+			const res = await handleApi(req, new URL(req.url), env, mockCtx());
+			assert.equal(res.status, 200);
+			const body = (await res.json()) as any;
+			assert.equal(body.bundleProductPublished, false);
+			assert.equal(body.cartTransformActive, false);
+		},
+	);
 });
 
 test("GET /api/config returns defaults, PUT /api/config persists a patch", async () => {
@@ -404,4 +444,37 @@ test("an unknown /api route returns 404", async () => {
 	const env = baseEnv();
 	const res = await handleApi(request("/api/nope"), new URL("https://x/api/nope"), env, mockCtx());
 	assert.equal(res.status, 404);
+});
+
+test("GET /api/performance defaults to a 7-day window", async () => {
+	const env = baseEnv();
+	const res = await handleApi(request("/api/performance"), new URL("https://x/api/performance"), env, mockCtx());
+	assert.equal(res.status, 200);
+	const body = (await res.json()) as any;
+	assert.equal(body.windowDays, 7);
+	assert.equal(body.series.bundlesAdded.length, 7);
+});
+
+test("GET /api/performance?days=30 uses a 30-day window", async () => {
+	const env = baseEnv();
+	const res = await handleApi(
+		request("/api/performance?days=30"),
+		new URL("https://x/api/performance?days=30"),
+		env,
+		mockCtx(),
+	);
+	assert.equal(res.status, 200);
+	const body = (await res.json()) as any;
+	assert.equal(body.windowDays, 30);
+});
+
+test("GET /api/performance?days=14 rejects an unsupported window", async () => {
+	const env = baseEnv();
+	const res = await handleApi(
+		request("/api/performance?days=14"),
+		new URL("https://x/api/performance?days=14"),
+		env,
+		mockCtx(),
+	);
+	assert.equal(res.status, 400);
 });

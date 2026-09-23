@@ -78,6 +78,31 @@ export interface SyncEnv {
 	LOCATION_BITMAP: KVNamespace;
 }
 
+export interface LastSyncRun {
+	startedAt: number;
+	finishedAt: number | null;
+	variants: number | null;
+	status: string;
+}
+
+interface SyncRunRow {
+	started_at: number;
+	finished_at: number | null;
+	variants: number | null;
+	status: string;
+}
+
+// T12: the admin page's Inventory sync card shows the most recent attempt,
+// whatever its outcome (including one still "running").
+export async function getLastSyncRun(db: D1Like, shop: string): Promise<LastSyncRun | null> {
+	const row = await db
+		.prepare("SELECT started_at, finished_at, variants, status FROM sync_runs WHERE shop = ? ORDER BY started_at DESC LIMIT 1")
+		.bind(shop)
+		.first<SyncRunRow>();
+	if (!row) return null;
+	return { startedAt: row.started_at, finishedAt: row.finished_at, variants: row.variants, status: row.status };
+}
+
 export async function runSync(
 	env: SyncEnv,
 	ctx: EventContext,

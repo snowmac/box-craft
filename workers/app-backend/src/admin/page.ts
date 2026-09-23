@@ -6,7 +6,7 @@
 // Bump whenever admin.css/admin.js change in a way that matters — the
 // query string it's appended as busts the long-cache headers those routes
 // serve with (see index.ts), without needing a build step to hash content.
-export const ADMIN_ASSET_VERSION = "1";
+export const ADMIN_ASSET_VERSION = "2";
 
 export interface AdminPageOptions {
 	clientId: string;
