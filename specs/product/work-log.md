@@ -358,6 +358,19 @@ still-valid-JSON wrapper rather than corrupting it) plus `recordEvent()`,
 which never throws synchronously — even a PII-rejected or DB-down write
 can't break the caller's request (D4). 8 new tests.
 
+**T2 done:** `/check` now records a `check` event per call (`n`,
+`compatible`, `unknown` — count of variant ids with no bitmap entry at
+all, `ms`) and an `error` event on KV failure (still returns
+`failOpen: true`). Accepts an optional `shop` in the request body,
+validated against `*.myshopify.com` before recording (D5) — an
+invalid or missing value never blocks the response, it's just recorded
+as `null`. Found the pre-existing `src/index.ts` imports lacked `.ts`
+extensions (fine for wrangler's bundler, but broke direct
+`node --test` execution needed to unit-test the fetch handler) — fixed
+alongside adding 5 new tests that exercise the handler directly with
+mock KV/D1/ctx, including one confirming an unbound `DB` (not yet
+provisioned — see T1) degrades to a silent no-op rather than a 500.
+
 Added `[[d1_databases]]` (commented placeholder, same pattern as the KV
 namespaces) and `[observability] enabled = true` to all three existing
 `wrangler.toml` files. Extended `scripts/setup-cloudflare.mjs` to create
