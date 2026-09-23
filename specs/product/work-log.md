@@ -232,6 +232,16 @@ token-exchange request for an offline token; `/` now does the exchange
 the first time it sees a shop. 10 new tests. `/auth` stays as a fallback
 for installs from a direct link.
 
+## 2026-09-23 — Auto-deploy for all three Workers (`7310bed`)
+
+Wrangler has no Workers Builds commands and its OAuth login gets an auth
+error from the Builds API, so `webhook-consumer` and `app-backend` now
+deploy from GitHub Actions (`.github/workflows/deploy-workers.yml`) on
+push to `main` when their files or `shared/` change, after tests +
+typecheck. @adam.bourg created a `CLOUDFLARE_API_TOKEN` ("Edit Cloudflare
+Workers") and added it as a repo secret. First run (`35884850348`)
+deployed both. `box-craft` stays on Workers Builds.
+
 ## Where things stand now
 
 **Live:** Guardrail Worker (`box-craft`, public, CORS-enabled), webhook
