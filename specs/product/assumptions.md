@@ -141,9 +141,11 @@ succeeded, and cleaning up the stored token on `app/uninstalled`.
   Needed two new scopes, `write_products` and `write_cart_transforms`
   (@adam.bourg chose app-created product over a merchant-created one). A
   stored token is re-exchanged whenever it doesn't cover the current
-  scopes. **Unverified:** whether an unpublished parent variant is
-  accepted by `linesMerge` at checkout, and whether its default inventory
-  tracking causes trouble — the end-to-end checkout test will tell.
+  scopes. **Verified 2026-09-23: an unpublished parent variant is NOT
+  accepted** — the function runs and returns a valid merge, but Shopify
+  silently doesn't apply it until the parent product is published to the
+  Online Store channel. Untracked inventory on the parent is fine. Store
+  setup still needs to publish it (open item in the work log).
 
 - **Bundle pricing via `percentageDecrease` (corrected 2026-09-23)**: the
   plan and Technical Spec said the merged line's price comes from

@@ -311,8 +311,21 @@ its `$app` metafield.
   0% adjustment is omitted. Replaying Shopify's real logged input through
   the new build gives a clean merge with no price field.
 
+### First end-to-end bundle merge
+
+After `boxcraft-bundles-4` the function emitted a clean merge (no price
+field) but Shopify still didn't apply it. A Shopify staff reply on the dev
+forum traced this symptom to "how a bundle's parent variant publication is
+resolved on the merge path". Publishing the "BoxCraft Bundle" product to
+the Online Store channel (done in the admin via Chrome) fixed it: cart
+and checkout now show **one "BoxCraft Bundle" line at $2,779.85 with the
+4 boards as components**. v1's core flow works end to end on the dev
+store.
+
 ## Where things stand now
 
+**Works end to end on the dev store:** picker → guardrail → add to cart →
+Cart Transform merges into one "BoxCraft Bundle" line at checkout.
 **Live:** Installed on `box-craft-demo` with a stored access token;
 bitmap backfilled and guardrail verified against real inventory. Guardrail Worker (`box-craft`, public, CORS-enabled), webhook
 consumer, app-backend — all three Cloudflare Workers deployed with real
@@ -321,6 +334,11 @@ bindings/secrets. Shopify app version `boxcraft-bundles-2` released.
 **Not yet done** (see `assumptions.md` for full detail):
 - Managed Pricing plan configuration in the Partner Dashboard.
 - Pick-N block not yet added to the dev store's theme.
+- **Store setup must publish the bundle product.** Done by hand on
+  box-craft-demo; the app's `ensureStoreSetup` still creates it
+  unpublished, so a fresh install won't merge. Needs `write_publications`
+  scope + `publishablePublish` to the Online Store publication, and a
+  decision on hiding the product's own storefront page.
 - No bundle discount: the picker's `_bundle_price` equals the list
   total, so the Cart Transform merges at list price.
 - **Embedded admin page redesign (scoped, not started).** The page at
