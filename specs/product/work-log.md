@@ -398,6 +398,16 @@ path and the direct `/auth/callback` OAuth path, and a `setup` event
 re-exchange triggering a real setup re-run, and the already-installed
 no-op case.
 
+**T4 done — Phase 1 (data layer) complete.** `shared/retention.ts`:
+`eventRetentionCutoff()` (pure, 90-day default per D3) and
+`pruneOldEvents()` (the actual `DELETE FROM events WHERE ts < ?`),
+shared so the daily cron and T14's future "prune events now" ops
+action both call the same place instead of duplicating the query.
+app-backend gets a `scheduled` handler on a `0 3 * * *` Cron Trigger
+(`[triggers]` in its `wrangler.toml`) that calls it via
+`ctx.waitUntil`. 4 new tests (cutoff math, the DELETE query/bound
+value, and the scheduled handler wiring itself).
+
 ## Where things stand now (updated 2026-09-23, end of day)
 
 ### Done and verified on the dev store (`box-craft-demo`)

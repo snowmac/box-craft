@@ -1,6 +1,7 @@
 import { verifyShopifyHmac } from "../../../shared/hmac.ts";
 import { verifyShopifyOAuthHmac } from "../../../shared/oauth-hmac.ts";
 import { recordEvent, type D1Like, type EventContext } from "../../../shared/events.ts";
+import { pruneOldEvents } from "../../../shared/retention.ts";
 import {
 	buildAuthorizeUrl,
 	buildEmbeddedAppUrl,
@@ -66,6 +67,13 @@ export default {
 		}
 
 		return new Response("Not found", { status: 404 });
+	},
+
+	async scheduled(_event: unknown, env: Env, ctx: EventContext): Promise<void> {
+		// D3: prune events older than the retention window. A failed prune
+		// just means slightly more D1 storage until the next run — never
+		// worth surfacing as a Worker error.
+		ctx.waitUntil(pruneOldEvents(env.DB).catch(() => {}));
 	},
 };
 

@@ -275,3 +275,20 @@ test("the direct /auth/callback path also records a token_exchange event on succ
 	assert.equal(inserts[0][3], "token_exchange");
 	assert.deepEqual(JSON.parse(inserts[0][5] as string), { ok: true });
 });
+
+test("the scheduled handler prunes old events via ctx.waitUntil", async () => {
+	const env = baseEnv();
+	let deleteQuery: string | null = null;
+	const db = {
+		prepare: (query: string) => {
+			deleteQuery = query;
+			return { bind: () => ({ run: async () => {} }) };
+		},
+	};
+	const ctx = mockCtx();
+
+	await worker.scheduled?.(undefined, { ...env, DB: db } as never, ctx as never);
+	await flush(ctx);
+
+	assert.match(deleteQuery ?? "", /DELETE FROM events WHERE ts < \?/);
+});

@@ -5,6 +5,12 @@ compatibility_date = "2026-09-22"
 [observability]
 enabled = true
 
+# D3/T4: daily event-retention prune (03:00 UTC, off-peak for this store's
+# single-timezone dev usage). Also handles T9's daily inventory sync once
+# that's wired in.
+[triggers]
+crons = ["0 3 * * *"]
+
 [vars]
 SHOPIFY_CLIENT_ID = "d3f114303ecd6de5e650b4bdb96106f6"
 SHOPIFY_SCOPES = "read_inventory,read_locations,write_products,write_cart_transforms,write_publications"
