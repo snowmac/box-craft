@@ -13,7 +13,7 @@ export function computeBundleTotal(selections) {
 	return Math.round(total * 100) / 100;
 }
 
-export function buildAddToCartPayload(selections, bundleId, totalPrice) {
+export function buildAddToCartPayload(selections, bundleId, totalPrice, boxHandle) {
 	return {
 		items: Array.from(selections.keys()).map((variantId) => ({
 			id: variantId,
@@ -21,6 +21,7 @@ export function buildAddToCartPayload(selections, bundleId, totalPrice) {
 			properties: {
 				_bundle_id: bundleId,
 				_bundle_price: totalPrice.toFixed(2),
+				_bundle_box: boxHandle,
 			},
 		})),
 	};
@@ -32,12 +33,27 @@ export function shouldRunGuardrailCheck(selectionSize) {
 	return selectionSize >= 2;
 }
 
+// T7: payload for the fire-and-forget "bundle_added" beacon (see
+// src/bundle-added-event.ts on the Guardrail Worker for the schema it's
+// validated against).
+export function buildBundleAddedBeacon(shop, boxHandle, itemCount, totalPrice) {
+	return JSON.stringify({
+		type: "bundle_added",
+		shop,
+		boxHandle,
+		itemCount,
+		totalPrice,
+	});
+}
+
 const DEBOUNCE_MS = 250;
 const CHECK_TIMEOUT_MS = 300;
 
 function initPicker(root) {
 	const pickCount = parseInt(root.dataset.pickCount, 10) || 1;
 	const guardrailUrl = root.dataset.guardrailUrl;
+	const shop = root.dataset.shop;
+	const boxHandle = root.dataset.box;
 	const items = Array.from(root.querySelectorAll("[data-boxcraft-item]"));
 	const counterEl = root.querySelector("[data-boxcraft-counter]");
 	const addButton = root.querySelector("[data-boxcraft-add-to-cart]");
@@ -97,7 +113,7 @@ function initPicker(root) {
 			const res = await fetch(`${guardrailUrl.replace(/\/$/, "")}/check`, {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ variantIds }),
+				body: JSON.stringify({ variantIds, shop }),
 				signal: controller.signal,
 			});
 			clearTimeout(timeout);
@@ -128,7 +144,7 @@ function initPicker(root) {
 
 		const bundleId = crypto.randomUUID(); // fresh per bundle instance, not per product
 		const totalPrice = computeBundleTotal(selected);
-		const payload = buildAddToCartPayload(selected, bundleId, totalPrice);
+		const payload = buildAddToCartPayload(selected, bundleId, totalPrice, boxHandle);
 
 		addButton.disabled = true;
 		addButton.textContent = "Adding...";
@@ -141,6 +157,7 @@ function initPicker(root) {
 			});
 			if (!res.ok) throw new Error(`add to cart failed: ${res.status}`);
 			addButton.textContent = "Added!";
+			sendBundleAddedBeacon(selected.size, totalPrice);
 			document.dispatchEvent(
 				new CustomEvent("boxcraft:bundle-added", { detail: { bundleId } }),
 			);
@@ -150,6 +167,16 @@ function initPicker(root) {
 		} finally {
 			addButton.disabled = false;
 		}
+	}
+
+	// Fire-and-forget: navigator.sendBeacon defaults to a text/plain body,
+	// which the browser sends as a "simple request" — no CORS preflight,
+	// and no response is ever read back (see src/index.ts's /events route
+	// on the Guardrail Worker). Never blocks or errors the add-to-cart flow.
+	function sendBundleAddedBeacon(itemCount, totalPrice) {
+		if (!guardrailUrl || !shop || typeof navigator.sendBeacon !== "function") return;
+		const url = `${guardrailUrl.replace(/\/$/, "")}/events`;
+		navigator.sendBeacon(url, buildBundleAddedBeacon(shop, boxHandle, itemCount, totalPrice));
 	}
 
 	updateUI();

@@ -1,0 +1,114 @@
+.boxcraft-picker {
+  --boxcraft-gap: 0.75rem;
+  --boxcraft-border: #d9d9d9;
+  --boxcraft-accent: #1a1a1a;
+  --boxcraft-blocked: #b42318;
+  display: flex;
+  flex-direction: column;
+  gap: var(--boxcraft-gap);
+}
+
+.boxcraft-picker__title {
+  margin: 0;
+}
+
+.boxcraft-picker__discount {
+  margin: 0;
+  font-weight: 600;
+  color: var(--boxcraft-accent);
+}
+
+.boxcraft-picker__counter {
+  margin: 0;
+  font-size: 0.875rem;
+  color: #666;
+}
+
+.boxcraft-picker__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: var(--boxcraft-gap);
+}
+
+.boxcraft-picker__item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.75rem;
+  border: 1px solid var(--boxcraft-border);
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+  text-align: center;
+  font: inherit;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.boxcraft-picker__item:hover {
+  border-color: var(--boxcraft-accent);
+}
+
+.boxcraft-picker__item[aria-pressed="true"] {
+  border-color: var(--boxcraft-accent);
+  border-width: 2px;
+  box-shadow: 0 0 0 1px var(--boxcraft-accent);
+}
+
+.boxcraft-picker__item[aria-pressed="true"]::after {
+  content: "✓ Selected";
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--boxcraft-accent);
+}
+
+.boxcraft-picker__item img {
+  width: 100px;
+  height: 100px;
+  object-fit: cover;
+  border-radius: 4px;
+}
+
+.boxcraft-picker__item-title {
+  font-size: 0.875rem;
+}
+
+.boxcraft-picker__item-price {
+  font-size: 0.8125rem;
+  color: #666;
+}
+
+.boxcraft-picker__blocked-message {
+  margin: 0;
+  padding: 0.625rem 0.875rem;
+  border-radius: 6px;
+  background: #fef3f2;
+  color: var(--boxcraft-blocked);
+  font-size: 0.875rem;
+}
+
+.boxcraft-picker__blocked-message[hidden] {
+  display: none;
+}
+
+.boxcraft-picker__add-to-cart {
+  padding: 0.75rem 1.5rem;
+  border: none;
+  border-radius: 6px;
+  background: var(--boxcraft-accent);
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.boxcraft-picker__add-to-cart:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+}
+
+@media (max-width: 480px) {
+  .boxcraft-picker__grid {
+    grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  }
+}

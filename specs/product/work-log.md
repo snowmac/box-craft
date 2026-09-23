@@ -498,6 +498,50 @@ through a real `/check` call). 134 tests total across all three
 packages (root 45, webhook-consumer 8, app-backend 81), typecheck
 clean everywhere.
 
+**T7 done — Picker reads boxes; styling fixes.** The block's Liquid
+now looks up `app.metafields.boxcraft.boxes.value` for the box matching
+its (new) **Box handle** setting (default `default`) and uses its
+title/collection/pick-count/discount instead of the block's own
+settings, which now only serve as the fallback for a store with no
+boxes configured. Renders `data-shop="{{ shop.permanent_domain }}"`
+and `data-box="<handle>"`, and shows a "Save X% on N" line when the
+matched box has a `percent` or `tiered` discount (highest tier, via
+Liquid's `last` filter — tiers are already validated ascending in
+`validate.ts`).
+
+`pick-n-picker.js`: `/check` now sends `shop` alongside `variantIds`
+(D5); add-to-cart writes a `_bundle_box` line property (the box
+handle) alongside the existing `_bundle_id`/`_bundle_price` — this is
+what T8's Cart Transform will key its own price computation off of
+instead of trusting `_bundle_price` from the cart. On a successful
+add, fires a `bundle_added` beacon via `navigator.sendBeacon` (defaults
+to a `text/plain` body — a "simple request", so no CORS preflight, and
+the response is never read back) to a new Guardrail Worker route,
+`POST /events`.
+
+`/events` (`src/index.ts`): validates the beacon against a strict
+schema (`src/bundle-added-event.ts` — exact `type`, a real
+`*.myshopify.com` shop, a bounded box handle, an integer item count,
+a finite bounded price; anything else is dropped, extra fields are
+ignored rather than recorded, so nothing PII-shaped can sneak through
+even if a caller tried) and rate-limits per `CF-Connecting-IP` with a
+small in-isolate sliding window (`shared/rate-limit.ts` —
+`createRateLimiter()`, not distributed, but enough to blunt a single
+abusive client hitting an endpoint that needs no auth). Records a
+`bundle_added` event (source `picker`) on success.
+
+Added `assets/pick-n-picker.css` (2.2 KB, under the 3 KB budget):
+visible `[aria-pressed="true"]` selected state, disabled/blocked
+states, a responsive grid.
+
+14 new tests (3 rate-limit, 7 bundle-added-event schema, 3 `/events`
+end-to-end on the Guardrail Worker, 1 picker beacon-payload test, plus
+the existing `buildAddToCartPayload` test extended to cover
+`_bundle_box`). 147 tests across the three Worker packages (root 58,
+webhook-consumer 8, app-backend 81), 7 in the picker's own suite, 14
+in cart-transform — all passing, typecheck clean. `shopify theme
+check` on the extension: clean, no offenses.
+
 ## Where things stand now (updated 2026-09-23, end of day)
 
 ### Done and verified on the dev store (`box-craft-demo`)

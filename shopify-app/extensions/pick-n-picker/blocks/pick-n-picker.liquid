@@ -1,24 +1,66 @@
 {% comment %}
   Pick-N picker app block. Merchants add this via the theme editor (app
-  blocks are natively insertable without editing theme templates) and
-  configure eligible products + pick count through the settings below —
-  no code changes required.
+  blocks are natively insertable without editing theme templates).
+
+  T7: if a box matching the "Box handle" setting exists in the app's
+  boxcraft.boxes metafield (written by the merchant admin — see
+  workers/app-backend/src/boxes-metafield.ts), its title/collection/pick
+  count/discount are used instead of the settings below, which stay as
+  the fallback for stores that haven't set up a box yet.
 {% endcomment %}
+
+{% assign boxcraft_box = nil %}
+{% assign boxcraft_boxes = app.metafields.boxcraft.boxes.value %}
+{% if boxcraft_boxes %}
+  {% for box in boxcraft_boxes %}
+    {% if box.handle == block.settings.box_handle and box.active %}
+      {% assign boxcraft_box = box %}
+      {% break %}
+    {% endif %}
+  {% endfor %}
+{% endif %}
+
+{% if boxcraft_box %}
+  {% assign picker_title = boxcraft_box.title %}
+  {% assign picker_pick_count = boxcraft_box.pick_count %}
+  {% assign picker_collection = collections[boxcraft_box.collection_handle] %}
+{% else %}
+  {% assign picker_title = block.settings.title %}
+  {% assign picker_pick_count = block.settings.pick_count %}
+  {% assign picker_collection = block.settings.eligible_collection %}
+{% endif %}
+
+{% assign boxcraft_discount_text = "" %}
+{% if boxcraft_box.discount.type == "percent" %}
+  {% assign boxcraft_discount_text = "Save " | append: boxcraft_box.discount.percent | append: "% on " | append: picker_pick_count %}
+{% elsif boxcraft_box.discount.type == "tiered" %}
+  {% assign boxcraft_top_tier = boxcraft_box.discount.tiers | last %}
+  {% if boxcraft_top_tier %}
+    {% assign boxcraft_discount_text = "Save up to " | append: boxcraft_top_tier.percent | append: "% on " | append: boxcraft_top_tier.min_items %}
+  {% endif %}
+{% endif %}
+
+<link rel="stylesheet" href="{{ 'pick-n-picker.css' | asset_url }}">
 
 <div
   class="boxcraft-picker"
   data-boxcraft-picker
-  data-pick-count="{{ block.settings.pick_count }}"
+  data-pick-count="{{ picker_pick_count }}"
   data-guardrail-url="{{ block.settings.guardrail_worker_url }}"
+  data-shop="{{ shop.permanent_domain }}"
+  data-box="{{ block.settings.box_handle }}"
 >
-  <h3 class="boxcraft-picker__title">{{ block.settings.title }}</h3>
+  <h3 class="boxcraft-picker__title">{{ picker_title }}</h3>
+  {% if boxcraft_discount_text != "" %}
+    <p class="boxcraft-picker__discount">{{ boxcraft_discount_text }}</p>
+  {% endif %}
   <p class="boxcraft-picker__counter" data-boxcraft-counter>
-    0 / {{ block.settings.pick_count }} selected
+    0 / {{ picker_pick_count }} selected
   </p>
 
   <div class="boxcraft-picker__grid" data-boxcraft-grid>
-    {% if block.settings.eligible_collection != blank %}
-      {% for product in block.settings.eligible_collection.products %}
+    {% if picker_collection != blank %}
+      {% for product in picker_collection.products %}
         {% for variant in product.variants %}
           <button
             type="button"
@@ -62,8 +104,15 @@
   "name": "Pick-N Picker",
   "target": "section",
   "settings": [
-    { "type": "text", "id": "title", "label": "Block title", "default": "Build your box" },
-    { "type": "collection", "id": "eligible_collection", "label": "Eligible products collection" },
+    {
+      "type": "text",
+      "id": "box_handle",
+      "label": "Box handle",
+      "info": "Matches a box configured in the BoxCraft admin. Leave as \"default\" unless you've created named boxes.",
+      "default": "default"
+    },
+    { "type": "text", "id": "title", "label": "Block title (used if no matching box is found)", "default": "Build your box" },
+    { "type": "collection", "id": "eligible_collection", "label": "Eligible products collection (used if no matching box is found)" },
     {
       "type": "range",
       "id": "pick_count",

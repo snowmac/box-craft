@@ -241,3 +241,75 @@ test("unknown_stock_policy=block: an unknown variant blocks the selection", asyn
 	const body = (await response.json()) as { compatible: boolean };
 	assert.equal(body.compatible, false);
 });
+
+test("POST /events records a well-formed bundle_added beacon and returns 202", async () => {
+	const { db, inserts } = mockDb();
+	const ctx = mockCtx();
+
+	const request = new Request("https://box-craft.example/events", {
+		method: "POST",
+		headers: { "CF-Connecting-IP": "1.2.3.4" },
+		body: JSON.stringify({
+			type: "bundle_added",
+			shop: "box-craft-demo.myshopify.com",
+			boxHandle: "default",
+			itemCount: 4,
+			totalPrice: 99.96,
+		}),
+	});
+
+	const response = await worker.fetch(request, { LOCATION_BITMAP: mockKv({}) as never, DB: db }, ctx);
+	await flush(ctx);
+
+	assert.equal(response.status, 202);
+	assert.equal(inserts.length, 1);
+	const [, shop, source, type] = inserts[0] as [unknown, string, string, string];
+	assert.equal(shop, "box-craft-demo.myshopify.com");
+	assert.equal(source, "picker");
+	assert.equal(type, "bundle_added");
+});
+
+test("POST /events rejects a malformed payload with 400 and records nothing", async () => {
+	const { db, inserts } = mockDb();
+	const ctx = mockCtx();
+
+	const request = new Request("https://box-craft.example/events", {
+		method: "POST",
+		body: JSON.stringify({ type: "bundle_added", shop: "not-a-shop" }),
+	});
+
+	const response = await worker.fetch(request, { LOCATION_BITMAP: mockKv({}) as never, DB: db }, ctx);
+	await flush(ctx);
+
+	assert.equal(response.status, 400);
+	assert.equal(inserts.length, 0);
+});
+
+test("POST /events rate-limits repeated calls from the same IP", async () => {
+	const { db } = mockDb();
+	const ctx = mockCtx();
+	const ip = "9.9.9.9-rate-limit-test";
+
+	const makeRequest = () =>
+		new Request("https://box-craft.example/events", {
+			method: "POST",
+			headers: { "CF-Connecting-IP": ip },
+			body: JSON.stringify({
+				type: "bundle_added",
+				shop: "box-craft-demo.myshopify.com",
+				boxHandle: "default",
+				itemCount: 2,
+				totalPrice: 10,
+			}),
+		});
+
+	const statuses: number[] = [];
+	for (let i = 0; i < 31; i++) {
+		const res = await worker.fetch(makeRequest(), { LOCATION_BITMAP: mockKv({}) as never, DB: db }, ctx);
+		statuses.push(res.status);
+	}
+	await flush(ctx);
+
+	assert.ok(statuses.slice(0, 30).every((s) => s === 202));
+	assert.equal(statuses[30], 429);
+});

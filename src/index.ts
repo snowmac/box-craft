@@ -3,6 +3,8 @@ import { checkCompatibility, type VariantLocations } from "../shared/intersectio
 import { recordEvent, type D1Like, type EventContext } from "../shared/events.ts";
 import { createShopConfigCache, getCachedShopConfig } from "../shared/shop-config-cache.ts";
 import { DEFAULT_SHOP_CONFIG, type ShopConfig } from "../shared/shop-config.ts";
+import { createRateLimiter } from "../shared/rate-limit.ts";
+import { parseBundleAddedEvent } from "./bundle-added-event.ts";
 import { preflightResponse, withCors } from "./cors.ts";
 
 export interface Env {
@@ -11,6 +13,12 @@ export interface Env {
 }
 
 const SHOP_DOMAIN_PATTERN = /^[a-z0-9][a-z0-9-]*\.myshopify\.com$/;
+
+// T7: /events is public and unauthenticated (a storefront sendBeacon
+// call), so it's rate-limited per IP rather than per shop.
+const BEACON_RATE_LIMIT = 30;
+const BEACON_RATE_WINDOW_MS = 60_000;
+const beaconRateLimiter = createRateLimiter(BEACON_RATE_LIMIT, BEACON_RATE_WINDOW_MS);
 
 // T6: one cache per isolate, shared across requests it handles (60s TTL).
 const shopConfigCache = createShopConfigCache();
@@ -55,9 +63,44 @@ export default {
 			return withCors(await handleCheck(request, env, ctx));
 		}
 
+		if (url.pathname === "/events" && request.method === "POST") {
+			return handleEvents(request, env, ctx);
+		}
+
 		return new Response("Not found", { status: 404 });
 	},
 };
+
+// T7: navigator.sendBeacon target for the picker's "bundle_added" signal.
+// Sent as a simple request (text/plain body) specifically so the browser
+// never issues a CORS preflight for it; sendBeacon also never reads the
+// response, so this never needs CORS headers of its own.
+async function handleEvents(request: Request, env: Env, ctx: EventContext): Promise<Response> {
+	const ip = request.headers.get("CF-Connecting-IP") ?? "unknown";
+	if (!beaconRateLimiter.allow(ip, Date.now())) {
+		return new Response(null, { status: 429 });
+	}
+
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(await request.text());
+	} catch {
+		return new Response(null, { status: 400 });
+	}
+
+	const event = parseBundleAddedEvent(parsed);
+	if (!event) {
+		return new Response(null, { status: 400 });
+	}
+
+	recordEvent(env.DB, ctx, {
+		shop: event.shop,
+		source: "picker",
+		type: "bundle_added",
+		data: { boxHandle: event.boxHandle, itemCount: event.itemCount, totalPrice: event.totalPrice },
+	});
+	return new Response(null, { status: 202 });
+}
 
 async function handleCheck(request: Request, env: Env, ctx: EventContext): Promise<Response> {
 	let variantIds: string[];
