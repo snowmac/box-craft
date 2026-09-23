@@ -7,6 +7,7 @@ api_version = "2026-07"
 [[extensions]]
 name = "boxcraft-cart-transform"
 handle = "boxcraft-cart-transform"
+uid = "6c2983ee-e7d8-2458-f63c-76d075492687ab35ebba"
 type = "function"
 
   [[extensions.targeting]]

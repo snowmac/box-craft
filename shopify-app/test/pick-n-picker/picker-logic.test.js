@@ -4,7 +4,7 @@ import {
 	computeBundleTotal,
 	buildAddToCartPayload,
 	shouldRunGuardrailCheck,
-} from "../assets/pick-n-picker.js";
+} from "../../extensions/pick-n-picker/assets/pick-n-picker.js";
 
 test("computeBundleTotal sums selected item prices", () => {
 	const selections = new Map([

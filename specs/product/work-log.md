@@ -174,6 +174,14 @@ Noted along the way: the Pick-N picker sets `_bundle_price` to the plain
 sum of the selected variants' prices, so there's no bundle discount yet —
 bundles currently check out at list price.
 
+First `shopify app deploy` attempt (run by @adam.bourg) logged in and
+built the function, then failed validation on the theme extension: it
+contained a `test/` directory (only `assets`/`blocks`/`locales`/`snippets`
+are allowed). Moved the picker tests to `shopify-app/test/pick-n-picker/`,
+added `locales/en.default.json`, and replaced the parser-blocking
+`script_tag` filter with a module `<script>` tag. `shopify theme check` is
+now clean.
+
 ## Where things stand now
 
 **Live:** Guardrail Worker (`box-craft`), webhook consumer, app-backend —

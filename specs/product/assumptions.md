@@ -42,6 +42,9 @@ against a real Shopify store.**
   shopify.app.toml
   extensions/cart-transform/       Cart Transform function
   extensions/pick-n-picker/        Theme app extension
+  test/pick-n-picker/              Picker unit tests (theme extensions may
+                                    only contain assets/blocks/locales/
+                                    snippets, so tests live outside it)
 ```
 
 ## Cloudflare deploy pipeline fix (found and fixed mid-build)
