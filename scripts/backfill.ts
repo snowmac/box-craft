@@ -12,9 +12,8 @@
 //   CLOUDFLARE_KV_NAMESPACE_ID=... \
 //   node --experimental-strip-types scripts/backfill.ts
 //
-// Not yet run or tested against a real store or a real KV namespace in
-// this environment — no Shopify Partner credentials or Cloudflare account
-// access are available here. See specs/product/assumptions.md.
+// First run against box-craft-demo on 2026-09-23 (26 variants, 52 KV
+// entries). See specs/product/work-log.md.
 
 import { bitmapKey, inventoryItemMapKey, type BitmapEntry } from "../shared/bitmap.ts";
 

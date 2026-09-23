@@ -254,7 +254,7 @@ succeeded, and cleaning up the stored token on `app/uninstalled`.
 4. **Set up a dev store with 2+ locations** with split inventory to
    actually exercise the full/partial/zero-overlap guardrail scenarios —
    nothing here has been checked against real Shopify inventory data yet.
-5. **Run the backfill script** once the above exist, with real
+5. ~~Run the backfill script~~ **Done 2026-09-23** for box-craft-demo. Originally: run it once the above exist, with real
    `SHOPIFY_ADMIN_ACCESS_TOKEN` / `CLOUDFLARE_API_TOKEN` values, before
    expecting the guardrail to do anything other than fail open.
 6. **Configure Managed Pricing** in the Partner Dashboard (Starter

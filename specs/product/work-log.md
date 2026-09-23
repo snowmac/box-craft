@@ -242,17 +242,34 @@ typecheck. @adam.bourg created a `CLOUDFLARE_API_TOKEN` ("Edit Cloudflare
 Workers") and added it as a repo secret. First run (`35884850348`)
 deployed both. `box-craft` stays on Workers Builds.
 
+## 2026-09-23 — Token stored, backfill run, guardrail verified live
+
+- After the app-backend deploy, reloading the embedded app ran token
+  exchange: `SHOP_TOKENS` now holds `shop:box-craft-demo.myshopify.com`,
+  and a read-only Admin API call with it succeeded.
+- Dev store needed no inventory changes: its generated test products
+  already span Shop location, My Custom Location, and the Snow City
+  Warehouse fulfillment-service location.
+- **First real backfill run**: 26 variants → 52 KV entries (bitmap +
+  inventory-item map), no errors.
+- Live `/check` against real inventory: Minimal + Videographer →
+  compatible (Shop); Multi-location + Minimal → compatible (Shop only);
+  3p Fulfilled + Minimal → blocked (both reported as conflicting, since
+  removing either fixes it); Out of Stock + Minimal → blocked (only the
+  out-of-stock variant reported).
+
 ## Where things stand now
 
-**Live:** Guardrail Worker (`box-craft`, public, CORS-enabled), webhook
+**Live:** Installed on `box-craft-demo` with a stored access token;
+bitmap backfilled and guardrail verified against real inventory. Guardrail Worker (`box-craft`, public, CORS-enabled), webhook
 consumer, app-backend — all three Cloudflare Workers deployed with real
 bindings/secrets. Shopify app version `boxcraft-bundles-2` released.
 
 **Not yet done** (see `assumptions.md` for full detail):
 - Managed Pricing plan configuration in the Partner Dashboard.
-- Dev store needs 2+ locations with split test inventory (currently just
-  created, not yet configured this way).
-- `scripts/backfill.ts` hasn't been run against real data yet.
+- `boxcraft.bundle_parent_variant_id` shop metafield not set, so the
+  Cart Transform merges nothing yet.
+- Pick-N block not yet added to the dev store's theme.
 - No bundle discount: the picker's `_bundle_price` equals the list
   total, so the Cart Transform merges at list price.
 - No integration/load tests, no real end-to-end checkout test on the dev
