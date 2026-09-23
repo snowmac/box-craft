@@ -333,28 +333,75 @@ and the product drops out of `/collections/all`; it still appeared in
 search suggestions right after the change (likely index lag — unverified).
 Direct link `/products/boxcraft-bundle` stays reachable by design.
 
-## Where things stand now
+Released as `boxcraft-bundles-5`. Pending: merchant approval of the new
+`write_publications` scope on box-craft-demo (consent screen shown), then
+verify store setup re-runs with it.
 
-**Works end to end on the dev store:** picker → guardrail → add to cart →
-Cart Transform merges into one "BoxCraft Bundle" line at checkout.
-**Live:** Installed on `box-craft-demo` with a stored access token;
-bitmap backfilled and guardrail verified against real inventory. Guardrail Worker (`box-craft`, public, CORS-enabled), webhook
-consumer, app-backend — all three Cloudflare Workers deployed with real
-bindings/secrets. Shopify app version `boxcraft-bundles-2` released.
+## Where things stand now (updated 2026-09-23, end of day)
 
-**Not yet done** (see `assumptions.md` for full detail):
-- Managed Pricing plan configuration in the Partner Dashboard.
-- Pick-N block not yet added to the dev store's theme.
-- No bundle discount: the picker's `_bundle_price` equals the list
-  total, so the Cart Transform merges at list price.
-- **Embedded admin page redesign (scoped, not started).** The page at
-  app-backend `GET /` is bare HTML. Wanted: native Shopify look (Polaris
-  web components + App Bridge) and useful content — likely a setup
-  checklist (token, bundle product, cart transform active, backfill run,
-  Pick-N block added to theme with a theme-editor deep link) plus
-  plan/tier info once Managed Pricing exists. Needs a design pass before
-  building.
-- No integration/load tests, no real end-to-end checkout test on the dev
-  store yet.
-- Billing test flow, App Store listing/submission, Go-to-Market tasks —
-  not started.
+### Done and verified on the dev store (`box-craft-demo`)
+
+**v1 bundles work end to end.** Pick-N picker on a product page → live
+location check → add to cart → Cart Transform merges the picks into one
+"BoxCraft Bundle" line at checkout (verified: $2,779.85, 4 components;
+no order placed).
+
+- **Shopify app:** released through `boxcraft-bundles-5`. Registered:
+  OAuth redirect, `app/uninstalled` + `inventory_levels/update` webhooks,
+  Cart Transform function, Pick-N theme app block. Installed on
+  box-craft-demo (managed installation + token exchange).
+- **Store setup on install (app-backend):** stores an offline token
+  (re-exchanged when scopes grow), creates/finds the "BoxCraft Bundle"
+  parent product (`UNLISTED` + published to Online Store), and activates
+  the Cart Transform with the parent variant in its `$app` metafield.
+- **Location guardrail:** backfill run (26 variants → 52 KV entries);
+  `/check` verified live for full/partial/zero overlap and out-of-stock,
+  and from the real storefront picker. Public, CORS-enabled, accepts
+  numeric or GID variant ids.
+- **Storefront:** Savor theme with the Pick-N block on the default
+  product template, collection "Automated collection", pick count 4.
+- **Cloudflare:** all three Workers live and auto-deploying on push to
+  `main` — `box-craft` via Workers Builds (build token replaced after it
+  was rolled), `webhook-consumer` + `app-backend` via GitHub Actions
+  (`deploy-workers.yml`, tests + typecheck gate each deploy).
+- **Tests:** guardrail 17, app-backend 32, cart-transform 14, picker 6,
+  webhook-consumer 4 — all passing.
+
+### Left to do
+
+**Finish in progress**
+- Approve the `write_publications` scope on box-craft-demo (consent
+  screen open), then confirm setup re-ran. Optionally test the publish
+  path itself: unpublish the bundle product, reload the app, confirm it
+  gets republished and checkout still merges.
+
+**Decisions needed (@adam.bourg)** — details in `assumptions.md`
+- **Unknown variants block bundles** instead of failing open (products
+  created after the last backfill). Fail open, or resolve via Admin API?
+- **Bundle parent's direct URL** (`/products/boxcraft-bundle`) is
+  reachable; a shopper could buy the $0 parent alone. Guard it or accept?
+- **Bundle discount:** `_bundle_price` is the plain sum, so bundles sell
+  at list. What discount model (per tier/setting)?
+
+**Product / UX**
+- Picker: no visual selected state on cards; "Number of items to pick"
+  change to 2 didn't save in the editor (still 4).
+- Embedded admin page redesign (scoped, not started): Polaris look plus
+  a setup checklist (token, bundle product, cart transform, backfill,
+  theme block with editor deep link), plan info once pricing exists.
+  Needs a design pass first.
+- Backfill runs by hand from a laptop; it should run automatically at
+  install (and periodically) for real merchants.
+
+**Testing gaps**
+- Blocked-bundle path in the picker UI (needs a collection containing
+  the 3p Fulfilled board); webhook consumer never exercised by a real
+  `inventory_levels/update` event; no integration/load tests.
+- Search suggestions still listed the UNLISTED bundle product right after
+  the change — check it drops out (likely index lag).
+
+**Business / launch**
+- Managed Pricing plans (Starter $19, Pro $49) — needs the app's
+  distribution method chosen (one-way decision).
+- Billing test flow, App Store listing/submission, Go-to-Market — not
+  started.
