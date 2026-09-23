@@ -1041,22 +1041,34 @@ price-tampering hole (`_bundle_price` trusted from the cart), and moves
 backfill into the Worker. Human steps are batched at its end.
 
 **Decisions needed (@adam.bourg)** — details in `assumptions.md`
-- **Unknown variants block bundles** instead of failing open (products
-  created after the last backfill). Fail open, or resolve via Admin API?
+- ~~**Unknown variants block bundles** instead of failing open (products
+  created after the last backfill). Fail open, or resolve via Admin
+  API?~~ **Resolved (D6, T6):** per-shop `unknown_stock_policy`, default
+  `allow` (fail open, matches everywhere else) with an operator-visible
+  `block` option in the guardrail card.
 - **Bundle parent's direct URL** (`/products/boxcraft-bundle`) is
   reachable; a shopper could buy the $0 parent alone. Guard it or accept?
-- **Bundle discount:** `_bundle_price` is the plain sum, so bundles sell
-  at list. What discount model (per tier/setting)?
+  *(Still open — not addressed by the admin-and-ops-plan.)*
+- ~~**Bundle discount:** `_bundle_price` is the plain sum, so bundles sell
+  at list. What discount model (per tier/setting)?~~ **Resolved (D10,
+  T5/T8):** per-box `none`/`percent`/`tiered` discount, merchant-editable
+  from the admin page's Boxes card, computed server-side by the Cart
+  Transform function rather than trusted from the cart (see D11 below).
 
 **Product / UX**
-- Picker: no visual selected state on cards; "Number of items to pick"
-  change to 2 didn't save in the editor (still 4).
-- Embedded admin page redesign (scoped, not started): Polaris look plus
-  a setup checklist (token, bundle product, cart transform, backfill,
-  theme block with editor deep link), plan info once pricing exists.
-  Needs a design pass first.
-- Backfill runs by hand from a laptop; it should run automatically at
-  install (and periodically) for real merchants.
+- ~~Picker: no visual selected state on cards~~ **Resolved (T7):**
+  `assets/pick-n-picker.css` gives `[aria-pressed="true"]` a visible
+  selected state. "Number of items to pick" editor-save bug not
+  independently re-verified.
+- ~~Embedded admin page redesign... Needs a design pass first.~~
+  **Resolved (T11/T12):** a real admin page — Setup checklist,
+  Performance with sparklines, Boxes table + form, Location guardrail
+  toggle, Inventory sync + Sync now. Not yet verified inside a real
+  Shopify admin iframe (no browser access in this sandbox).
+- ~~Backfill runs by hand from a laptop; it should run automatically at
+  install (and periodically) for real merchants.~~ **Resolved (T9):**
+  `runSync()` runs at install, on demand (admin page/ops console), and
+  daily via cron.
 
 **Testing gaps**
 - Blocked-bundle path in the picker UI (needs a collection containing
@@ -1070,3 +1082,108 @@ backfill into the Worker. Human steps are batched at its end.
   distribution method chosen (one-way decision).
 - Billing test flow, App Store listing/submission, Go-to-Market — not
   started.
+
+## Operating BoxCraft
+
+Reference for running the system day to day, not a log entry — kept
+up to date as things change, unlike the dated entries above.
+
+### Where the logs live
+
+Everything BoxCraft records ends up in one place: the D1 `events`
+table (`db/migrations/0001_init.sql`), shared by all four Workers.
+Every row is `{ts, shop, source, type, level, data}` — `source` is
+which Worker/component recorded it (`guardrail` | `picker` | `webhook`
+| `app` | `cron`), `type` is the event kind (`check`, `bundle_added`,
+`bundle_sold`, `sync`, `setup`, `token_exchange`, `error`, ...), and
+`data` is a small JSON blob — never anything beyond ids, counts, and
+money totals (no PII, enforced by `buildEventRow`'s key-pattern check
+in `shared/events.ts`). Retention is 90 days (`shared/retention.ts`),
+pruned by app-backend's daily cron or the ops console's "Prune events
+now" action.
+
+Two ways to read them:
+- **The ops console** (below) — the Events explorer (filter by shop/
+  source/type/level/time range) and the Errors view (grouped by
+  where/message) are the normal way to look at this data. Nothing
+  needs direct D1 access for day-to-day operating.
+- **Direct D1 access** (`npx wrangler d1 execute boxcraft --remote
+  --command "SELECT ..."` from a machine with `wrangler login`) — for
+  anything the console doesn't surface, or before the console existed
+  for a given shop's history.
+
+This is D1-recorded application events, not request/response logs —
+for a Worker's own runtime logs (uncaught exceptions, console output),
+use `npx wrangler tail <worker-name>` (live) or the Cloudflare
+dashboard's Workers Logs (retained; each `wrangler.toml` has
+`[observability] enabled = true`). For the Cart Transform function
+specifically, Shopify doesn't push function-run logs anywhere BoxCraft
+can ingest them — use `shopify app logs` from `shopify-app/` (noted in
+the plan's own "Out of scope").
+
+### Reaching the ops console
+
+The console is `workers/ops-console`, deployed as the Cloudflare
+Worker `box-craft-ops` (auto-deploys from GitHub Actions on push to
+`main`, same as webhook-consumer/app-backend). Its URL is
+`https://box-craft-ops.<account-subdomain>.workers.dev` unless a
+custom domain was set up — @adam.bourg has the exact URL from the
+Cloudflare dashboard (Workers & Pages → box-craft-ops).
+
+To log in: open the URL, enter the `OPS_TOKEN` value on the login
+form. That token isn't in this repo or in Cloudflare's dashboard in
+plaintext once set — it lives in the local macOS keychain, entry name
+`box-craft-ops` (`security find-generic-password -s box-craft-ops -a
+adam -w` to retrieve it). A successful login sets a signed, HttpOnly,
+`SameSite=Strict` cookie good for 7 days (`workers/ops-console/src/auth.ts`);
+"Log out" in the nav clears it early.
+
+If the token is ever lost or needs rotating: `npx wrangler secret put
+OPS_TOKEN` from `workers/ops-console/` with a newly generated random
+value, then update the keychain entry (`security add-generic-password
+-s box-craft-ops -a adam -w <new-token> -U` to overwrite) — never
+print the token to a terminal that gets logged/shared.
+
+### Running each action
+
+All four live on the console, gated behind an in-page two-step
+confirm (click once to reveal a real Confirm/Cancel, not a
+`window.confirm` popup):
+
+- **Re-run store setup** — Store detail page (`/stores/<shop>`) →
+  Actions card. Re-runs `ensureStoreSetup` (bundle product + Cart
+  Transform activation) for that shop. Safe to run any time; it's the
+  same idempotent logic that runs automatically on install. Use when
+  the Setup checklist shows the bundle product or Cart Transform as
+  not confirmed and reloading the merchant admin page hasn't fixed it.
+- **Run sync** — same Store detail page. Runs a full inventory
+  backfill for that shop immediately, same as the merchant clicking
+  "Sync now" in their own admin page. Skips (reports so) if a sync for
+  that shop is already running.
+- **Force setup re-run** (labeled from D15/the plan as "force token
+  re-exchange") — same Store detail page, marked as a more disruptive
+  action. Clears the shop's stored `setupAt` only; it does **not**
+  itself call Shopify's OAuth token endpoint — the operator console has
+  no fresh `id_token` to do that with. What it actually does is make
+  app-backend treat that shop as "not set up yet" again, so the *next*
+  time anyone opens the embedded admin page for that shop, app-backend
+  redoes its own setup checks (and re-exchanges the token too, if the
+  stored scope no longer covers what's required). Use this when a
+  shop's setup state looks stuck or wrong and a plain re-run of setup
+  alone doesn't clear it.
+- **Prune events now** — Errors page. Deletes every `events` row older
+  than the 90-day retention window immediately, rather than waiting
+  for the next 03:00 UTC cron run. Rarely needed; exists mainly for
+  right after changing the retention window or clearing out test data.
+
+### What's not been verified live
+
+Everything above is implemented and unit-tested against mocked D1/KV/
+Admin API responses, but this session has never run any of it against
+the real, deployed system (no Cloudflare/Shopify credentials in this
+sandbox, and D1 itself isn't provisioned in production yet — see the
+Human checkpoints in `admin-and-ops-plan.md`). Before relying on this
+section day to day, confirm at least once: the console URL loads and
+accepts the real `OPS_TOKEN`, the Overview page shows `box-craft-demo`
+with real data, and each action produces the effect described above
+against that store.

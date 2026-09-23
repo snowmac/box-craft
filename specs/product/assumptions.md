@@ -118,15 +118,21 @@ succeeded, and cleaning up the stored token on `app/uninstalled`.
   misconfiguration. Worth deciding if that's the right failure mode for a
   clearly-broken-setup case versus a real runtime outage.
 
-- **Unknown variants block, they don't fail open (open decision,
-  2026-09-23)**: `/check` treats a variant with no bitmap entry as stocked
-  nowhere, so any bundle containing it is blocked. That happens for every
-  product created after the last backfill until the next one runs (the
-  webhook consumer drops events for variants missing from the
-  inventory-item map). This contradicts the fail-open principle used for
-  KV errors. Options: treat missing entries as "unknown — ignore in the
-  intersection", or have the webhook consumer resolve unknown inventory
-  items via the Admin API. Needs a decision.
+- **Unknown-stock policy — resolved (D6, admin-and-ops-plan, T6,
+  2026-09-23)**: this was an open decision as of the first build ("unknown
+  variants block, they don't fail open" — see the original note this
+  replaces). `specs/product/admin-and-ops-plan.md`'s D6 resolves it: a new
+  per-shop `unknown_stock_policy` setting (D1 `shop_config` table),
+  default **`allow`** — a variant with no bitmap entry is left out of the
+  intersection entirely (matches the fail-open principle used everywhere
+  else) rather than treated as stocked nowhere. A shop can switch to
+  `block` (the old, only behavior) from the merchant admin page's Location
+  guardrail card. Implemented in `shared/intersection.ts` (`checkCompatibility`'s
+  `policy` param) and wired through the Guardrail Worker's `/check`
+  (`src/index.ts`, T6) — see the work log's T6 entry for the full design
+  and tests. This also resolves the "product created after the last
+  backfill blocks every bundle it's in" problem noted above, under the
+  new default.
 
 - **Cart Transform activation and placeholder bundle product (revised
   2026-09-23)**: a deployed Cart Transform only runs once the app calls
@@ -151,18 +157,39 @@ succeeded, and cleaning up the stored token on `app/uninstalled`.
   whether that needs guarding (e.g. a price on the parent, if Shopify
   ignores parent price in merges — unverified).
 
-- **Bundle pricing via `percentageDecrease` (corrected 2026-09-23)**: the
+- **Bundle pricing via `percentageDecrease` (corrected 2026-09-23,
+  superseded by the D11 security fix below)**: the
   plan and Technical Spec said the merged line's price comes from
   `price.fixedPricePerUnit`, but Shopify's actual `LinesMergeOperation`
   schema only accepts `price.percentageDecrease` — `fixedPricePerUnit`
   exists only on expand/update operations (and `update` is Plus-only). The
-  original code would have been rejected at checkout. Now the function
-  converts `_bundle_price` to a percentage off the merged lines' summed
-  `cost.totalAmount`, rounded to 4 decimal places (so the charged total can
-  differ from `_bundle_price` by a fraction of a cent on large carts). A
-  bundle priced at or above list can't be expressed (no negative decrease)
-  and merges at list price. `_bundle_price` is the **total** bundle price,
-  not per-unit.
+  original code would have been rejected at checkout. At the time, the
+  function converted `_bundle_price` to a percentage off the merged lines'
+  summed `cost.totalAmount`, rounded to 4 decimal places (so the charged
+  total can differ from `_bundle_price` by a fraction of a cent on large
+  carts). A bundle priced at or above list couldn't be expressed (no
+  negative decrease) and merged at list price. `_bundle_price` was the
+  **total** bundle price, not per-unit.
+
+- **Price trust — security fix (D11, admin-and-ops-plan, T8,
+  2026-09-23)**: the design above had a real hole — `_bundle_price` came
+  from a cart line property the picker set client-side, which is exactly
+  the kind of value a shopper can edit directly (browser devtools, or any
+  cart-manipulation extension) before checkout, since Shopify cart line
+  properties are plain, unsigned key/value pairs the storefront controls.
+  With discounts now merchant-configurable (D10, boxes with `percent`/
+  `tiered` discounts, T5), that stopped being a "free shipping label"
+  problem and became a real pricing exploit: edit `_bundle_price` down,
+  checkout charges less. T8 removes the hole at the root — the Cart
+  Transform function's input query no longer requests `_bundle_price` or
+  `cart.lines.cost` at all (not filtered out, never fetched, so there's
+  nothing left to tamper with), and it computes the discount itself from
+  a box's own discount rule, read from a metafield the function's own
+  cart transform holds (`$app/boxes`, written server-side by T5's boxes
+  API — never anything the storefront/cart supplies). The picker still
+  writes `_bundle_price` for on-page display only; the function's
+  `group-bundles.test.ts` includes a test proving a smuggled/tampered
+  `_bundle_price`-shaped field has zero effect on the computed price.
 
 - **Cart Transform JS runtime adapter shape (verified 2026-09-23)**:
   restructured to match Shopify's official `functions-cart-transform-js`
@@ -212,12 +239,30 @@ succeeded, and cleaning up the stored token on `app/uninstalled`.
   be refreshed until the shop reinstalls (uninstall clears it) — fine for
   v1's fixed read-only scopes, revisit if scopes grow.
 
-- **Embedded admin shell is intentionally minimal**: just confirms install
-  succeeded and points the merchant at the theme editor to add the Pick-N
-  block. No settings UI, since v1 has no merchant-facing config beyond
-  what the theme editor already provides (per the Technical Spec). This
-  may need to grow once billing/tier state needs to be surfaced somewhere
-  merchant-visible.
+- **Embedded admin shell is intentionally minimal (superseded by the
+  admin-and-ops-plan, T11/T12, 2026-09-23)**: at the time this was
+  written, it was true — just confirmed install succeeded and pointed the
+  merchant at the theme editor. The merchant admin page now has real
+  content: a Setup checklist, Performance metrics with sparklines, a
+  Boxes table + inline create/edit/delete form, the Location guardrail
+  toggle, and Inventory sync — see the work log's T11/T12 entries.
+
+- **Order webhooks and Protected Customer Data (D13, admin-and-ops-plan,
+  T10, 2026-09-23)**: T10 added an `orders/paid` webhook subscription
+  (`read_orders` scope) so webhook-consumer can record `bundle_sold`
+  events for the Performance card's revenue/conversion numbers. Per
+  Shopify's own policy, **order data is Protected Customer Data** — an
+  App Store listing that requests order webhooks needs Shopify's PCD
+  approval (a data-protection review in the Partner Dashboard) before
+  going live, even though the app never stores anything from the order
+  beyond an id, a bundle count, and a revenue total (no line item titles,
+  no customer name/email/address — enforced by `computeBundleSaleSummary`
+  and the events table's no-PII rule). Not an issue for continued
+  development on `box-craft-demo` (dev stores don't need PCD approval),
+  but this needs a completed PCD review as part of App Store submission,
+  before `read_orders` can be requested from real merchants at large. See
+  `shopify.app.toml`'s comment on the `orders/paid` subscription and the
+  work log's T10 entry.
 
 ## Known gaps (explicitly out of scope for what a headless session can do)
 
