@@ -286,6 +286,13 @@ bindings/secrets. Shopify app version `boxcraft-bundles-2` released.
 - Pick-N block not yet added to the dev store's theme.
 - No bundle discount: the picker's `_bundle_price` equals the list
   total, so the Cart Transform merges at list price.
+- **Embedded admin page redesign (scoped, not started).** The page at
+  app-backend `GET /` is bare HTML. Wanted: native Shopify look (Polaris
+  web components + App Bridge) and useful content — likely a setup
+  checklist (token, bundle product, cart transform active, backfill run,
+  Pick-N block added to theme with a theme-editor deep link) plus
+  plan/tier info once Managed Pricing exists. Needs a design pass before
+  building.
 - No integration/load tests, no real end-to-end checkout test on the dev
   store yet.
 - Billing test flow, App Store listing/submission, Go-to-Market tasks —
