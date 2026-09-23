@@ -295,6 +295,22 @@ its `$app` metafield.
   state (styling gap), and unknown variants block instead of failing open
   (logged as an open decision in `assumptions.md`).
 
+### Guardrail fix deployed; first real Cart Transform run
+
+- `box-craft` Workers Builds had been failing since `7310bed` with "the
+  build token selected for this build has been deleted or rolled" (it
+  used a token from another project). @adam.bourg set a new build token;
+  the variant-id fix deployed and the same 4-board bundle became
+  compatible on the live storefront.
+- Added that bundle to cart: 4 lines with the right `_bundle_id` /
+  `_bundle_price`, but no merge at cart or checkout. `shopify app logs`
+  showed the function running successfully and emitting the correct
+  `linesMerge` — with `percentageDecrease: "0"`. Cause: summing prices as
+  floats (699.95+729.95+749.95+600 = 2779.8500000000004) made an at-list
+  bundle look discounted by a hair. Now computed in integer cents, and a
+  0% adjustment is omitted. Replaying Shopify's real logged input through
+  the new build gives a clean merge with no price field.
+
 ## Where things stand now
 
 **Live:** Installed on `box-craft-demo` with a stored access token;

@@ -163,3 +163,21 @@ test("an unparseable bundle price is skipped rather than guessing a price", () =
 	);
 	assert.deepEqual(result.operations, []);
 });
+
+test("a bundle priced exactly at list gets no price adjustment despite float rounding", () => {
+	// 699.95 + 729.95 + 749.95 + 600 = 2779.8500000000004 in floating point;
+	// a naive comparison emits a 0% decrease, which Shopify rejects.
+	const lines = ["699.95", "729.95", "749.95", "600.00"].map((amount, i) =>
+		line({ id: `gid://shopify/CartLine/${i}`, cost: { totalAmount: { amount } }, bundleId: { value: "b" }, bundlePrice: { value: "2779.85" } }),
+	);
+	const result = buildCartTransformOperations(input(lines));
+	assert.equal(result.operations.length, 1);
+	assert.equal(result.operations[0].linesMerge.price, undefined);
+});
+
+test("a discount too small to show at 4 decimal places is omitted rather than sent as 0", () => {
+	const result = buildCartTransformOperations(
+		input([line({ id: "gid://shopify/CartLine/1", cost: { totalAmount: { amount: "1000000.00" } }, bundleId: { value: "b" }, bundlePrice: { value: "999999.99" } })]),
+	);
+	assert.equal(result.operations[0].linesMerge.price, undefined);
+});

@@ -70,11 +70,15 @@ export function buildCartTransformOperations(
 
 	const operations: LinesMergeOperation[] = [];
 	for (const lines of groups.values()) {
-		const bundlePrice = Number(lines[0]?.bundlePrice?.value);
+		// Work in integer cents: summing decimal strings as floats drifts
+		// (699.95 + 729.95 + 749.95 + 600 !== 2779.85), which would turn an
+		// at-list bundle into a bogus 0% decrease that Shopify rejects.
+		const bundleCents = toCents(lines[0]?.bundlePrice?.value);
 		// Missing or unparseable price is a storefront bug — skip rather than guess.
-		if (!Number.isFinite(bundlePrice) || bundlePrice < 0) continue;
+		if (bundleCents === null || bundleCents < 0) continue;
 
-		const listTotal = lines.reduce((sum, l) => sum + Number(l.cost.totalAmount.amount), 0);
+		let listCents = 0;
+		for (const l of lines) listCents += toCents(l.cost.totalAmount.amount) ?? 0;
 
 		const merge: LinesMergeOperation["linesMerge"] = {
 			cartLines: lines.map((l) => ({ cartLineId: l.id, quantity: l.quantity })),
@@ -83,14 +87,20 @@ export function buildCartTransformOperations(
 		// linesMerge only accepts a percentageDecrease, not a fixed price, so
 		// the bundle price is expressed as a discount off the merged lines'
 		// list total. A bundle priced at or above list can't be represented
-		// (no negative decrease) and merges at list price instead.
-		if (bundlePrice < listTotal) {
-			const percent = (1 - bundlePrice / listTotal) * 100;
-			merge.price = { percentageDecrease: { value: String(Math.round(percent * 10000) / 10000) } };
+		// (no negative decrease) and merges at list price instead; so does a
+		// discount too small to survive rounding to 4 decimal places.
+		if (bundleCents < listCents) {
+			const percent = Math.round((1 - bundleCents / listCents) * 100 * 10000) / 10000;
+			if (percent > 0) merge.price = { percentageDecrease: { value: String(percent) } };
 		}
 
 		operations.push({ linesMerge: merge });
 	}
 
 	return { operations };
+}
+
+function toCents(amount: string | undefined): number | null {
+	const n = Number(amount);
+	return amount !== undefined && amount !== "" && Number.isFinite(n) ? Math.round(n * 100) : null;
 }
