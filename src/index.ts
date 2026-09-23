@@ -1,5 +1,6 @@
 import { bitmapKey, type BitmapEntry } from "../shared/bitmap";
 import { checkCompatibility, type VariantLocations } from "../shared/intersection";
+import { preflightResponse, withCors } from "./cors";
 
 export interface Env {
 	LOCATION_BITMAP: KVNamespace;
@@ -13,8 +14,12 @@ export default {
 			return Response.json({ status: "ok" });
 		}
 
+		if (url.pathname === "/check" && request.method === "OPTIONS") {
+			return preflightResponse();
+		}
+
 		if (url.pathname === "/check" && request.method === "POST") {
-			return handleCheck(request, env);
+			return withCors(await handleCheck(request, env));
 		}
 
 		return new Response("Not found", { status: 404 });

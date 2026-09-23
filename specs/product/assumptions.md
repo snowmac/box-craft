@@ -156,7 +156,9 @@ succeeded, and cleaning up the stored token on `app/uninstalled`.
   flow (more likely the app should inject this automatically at install
   time via app-embed config), but there's no install flow built yet to
   wire it up differently, so this is a placeholder that at least makes the
-  block functional and demoable today.
+  block functional and demoable today. Its default is the Guardrail
+  Worker's own URL (`https://box-craft.adam-bourg.workers.dev`) because
+  Shopify rejects a blank default for a `url` setting.
 
 - **No auth on `/check` or store-scoping**: per the spec's own note ("no
   session, no auth beyond store validation for v1"), but store validation

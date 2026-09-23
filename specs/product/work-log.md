@@ -182,6 +182,20 @@ added `locales/en.default.json`, and replaced the parser-blocking
 `script_tag` filter with a module `<script>` tag. `shopify theme check` is
 now clean.
 
+Second deploy attempt got through build and validation but Shopify
+rejected the app block: a `url` setting's `default` can't be blank. Set it
+to the Guardrail Worker's URL. Checking that URL turned up two latent bugs
+that would have silently disabled location checks on every storefront (the
+picker fails open):
+
+- **The Guardrail Worker is behind Cloudflare Access** — every request to
+  `box-craft.adam-bourg.workers.dev` 302s to an Access login page. Needs
+  turning off in the Cloudflare dashboard (dashboard-only).
+- **No CORS on `/check`.** The picker's cross-origin JSON POST triggers a
+  preflight, which 404'd. Added `OPTIONS` handling and
+  `Access-Control-Allow-Origin: *` (`src/cors.ts`, 3 new tests), verified
+  under `wrangler dev`.
+
 ## Where things stand now
 
 **Live:** Guardrail Worker (`box-craft`), webhook consumer, app-backend —
@@ -192,6 +206,7 @@ all three Cloudflare Workers deployed with real bindings/secrets.
   redirect URL and `app/uninstalled` webhook subscription with Shopify.
   Without this, an install attempt fails with a redirect_uri mismatch
   even though the Worker is live.
+- Remove Cloudflare Access from the `box-craft` Worker's workers.dev URL.
 - Managed Pricing plan configuration in the Partner Dashboard.
 - Dev store needs 2+ locations with split test inventory (currently just
   created, not yet configured this way).
