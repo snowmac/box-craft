@@ -655,6 +655,62 @@ yet in production either (still a commented-out binding in all three
 noted back in T1). Deferred to the same human checkpoint as the rest
 of D1 provisioning.
 
+**T10 done — Orders → bundles sold (D13).** Added `read_orders` to
+`shopify.app.toml`'s scopes and `SHOPIFY_SCOPES` in app-backend's
+`wrangler.toml` (kept in sync, per that file's existing convention),
+plus an `orders/paid` webhook subscription pointed at
+webhook-consumer's new `POST /webhooks/orders-paid`. Scope growth
+means the next admin load re-exchanges the token and re-runs setup —
+already-generic handling from earlier tasks, no new code needed for
+that part.
+
+`workers/webhook-consumer/src/orders-paid.ts`:
+`computeBundleSaleSummary(payload)` — pure, groups an order's line
+items by their `_bundle_id` property (same property the picker sets
+on add-to-cart) and returns `{orderId, bundleCount, revenueCents}`, or
+`null` for an order with no bundle line items (so the handler records
+nothing). `bundleCount` is the number of *distinct* bundle ids in the
+order, not the number of bundle line items — an order can contain more
+than one bundle. Revenue is summed in integer cents across every
+bundle line, same float-avoidance reasoning as the Cart Transform's
+old price math. The handler
+(`handleOrdersPaidWebhook`) follows the same shape as the existing
+`inventory_levels/update` handler: HMAC-verify with
+`SHOPIFY_WEBHOOK_SECRET`, parse, and record one `bundle_sold` event
+(source `webhook`) — `orderId`/`bundleCount`/`revenueCents` only, no
+line item titles or customer data, matching the plan's no-PII rule.
+
+**Open question, not resolved here:** whether `_bundle_id` actually
+survives onto an order's line item(s) once the Cart Transform function
+has merged a bundle's cart lines into one parent "BoxCraft Bundle"
+line (T8) hasn't been checked against a real paid order — nothing in
+this session can place one. `computeBundleSaleSummary` groups whatever
+line items the webhook payload actually contains, which is correct
+either way, but if the merge drops the custom attribute from the
+parent line (plausible — Shopify's own docs are unclear on whether
+per-component cart attributes promote to the synthesized parent line),
+bundle sales would go unrecorded despite bundles still merging and
+charging correctly at checkout. Flagged in the code comment; needs a
+real test order on `box-craft-demo` after the next `shopify app
+deploy` to confirm either way.
+
+11 new tests: 7 for `computeBundleSaleSummary` (no bundles, one bundle
+across multiple lines, two distinct bundles, non-bundle lines
+excluded, quantity multiplying revenue, a missing `properties` array,
+an unparseable price still counting toward `bundleCount` with zero
+revenue), 4 for the webhook route itself (a fixture order recording
+one event, no bundle lines recording nothing, bad HMAC rejected before
+any recording, an unparseable JSON body returning 400). Fixture
+payloads carry no customer name, email, or address — order id, line
+prices, and the app's own cart properties only. 171 tests across the
+three Worker packages (root 65, webhook-consumer 19, app-backend 87),
+typecheck clean everywhere.
+
+Per D13 and the plan's own note: order webhooks need Protected
+Customer Data approval for an eventual App Store release. Not an issue
+on a dev store; carrying this forward to T15's `assumptions.md` update
+rather than duplicating it here.
+
 ## Where things stand now (updated 2026-09-23, end of day)
 
 ### Done and verified on the dev store (`box-craft-demo`)

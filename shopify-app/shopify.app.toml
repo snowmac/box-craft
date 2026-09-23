@@ -28,6 +28,13 @@ api_version = "2026-01"
   topics = [ "inventory_levels/update" ]
   uri = "https://box-craft-webhook-consumer.adam-bourg.workers.dev/webhooks/inventory-levels-update"
 
+  # T10/D13: bundle sales attribution. Order webhooks need Protected
+  # Customer Data approval for an App Store release — fine on a dev store
+  # (see assumptions.md).
+  [[webhooks.subscriptions]]
+  topics = [ "orders/paid" ]
+  uri = "https://box-craft-webhook-consumer.adam-bourg.workers.dev/webhooks/orders-paid"
+
 [access_scopes]
 # read_inventory + read_locations: the Guardrail Worker's backfill script
 # and the webhook consumer's inventory_levels/update subscription both
@@ -37,8 +44,9 @@ api_version = "2026-01"
 # the Cart Transform function on each store (cartTransformCreate).
 # write_publications: app-backend publishes the bundle parent product to
 # the Online Store — Shopify skips linesMerge for an unpublished parent.
+# read_orders: T10's orders/paid webhook (bundle sales attribution).
 # Keep in sync with SHOPIFY_SCOPES in workers/app-backend/wrangler.toml.
-scopes = "read_inventory,read_locations,write_products,write_cart_transforms,write_publications"
+scopes = "read_inventory,read_locations,write_products,write_cart_transforms,write_publications,read_orders"
 
 [auth]
 redirect_urls = [ "https://box-craft-app-backend.adam-bourg.workers.dev/auth/callback" ]
