@@ -62,7 +62,7 @@ Read first: `specs/product/work-log.md` (current state), `assumptions.md`
 | D16 | Ops console reach into Shopify | Reads shop tokens from `SHOP_TOKENS` (bind it read-only by convention) to run diagnostic Admin API queries and actions | Needed for "re-run setup", cart transform status |
 | D17 | Charts | Tiny inline SVG sparklines/bars drawn by vanilla JS; numbers first | No chart library |
 
-## Data model (D1, `migrations/0001_init.sql` at repo root `db/`)
+## Data model (D1, `db/migrations/0001_init.sql`)
 
 ```sql
 CREATE TABLE events (
