@@ -258,6 +258,20 @@ deployed both. `box-craft` stays on Workers Builds.
   removing either fixes it); Out of Stock + Minimal → blocked (only the
   out-of-stock variant reported).
 
+## 2026-09-23 — Cart Transform activation on install
+
+Found before the checkout test: a deployed Cart Transform does nothing
+until the app calls `cartTransformCreate` per store, and there was no
+placeholder bundle product. app-backend now runs an idempotent store setup
+on first load after install — find or create a hidden "BoxCraft Bundle"
+product, then activate the function with that variant in the cart
+transform's own metafield (the function now reads
+`cartTransform.metafield` instead of an invented shop metafield). Added
+scopes `write_products` + `write_cart_transforms`, and token re-exchange
+when a stored token doesn't cover current scopes. API shapes checked by
+introspecting the live store's Admin API. 11 new tests (31 in
+app-backend), function rebuilt and re-run.
+
 ## Where things stand now
 
 **Live:** Installed on `box-craft-demo` with a stored access token;
@@ -267,8 +281,8 @@ bindings/secrets. Shopify app version `boxcraft-bundles-2` released.
 
 **Not yet done** (see `assumptions.md` for full detail):
 - Managed Pricing plan configuration in the Partner Dashboard.
-- `boxcraft.bundle_parent_variant_id` shop metafield not set, so the
-  Cart Transform merges nothing yet.
+- Cart Transform activation (store setup) not yet run on the dev store —
+  needs `shopify app deploy` for the new scopes, then an admin reload.
 - Pick-N block not yet added to the dev store's theme.
 - No bundle discount: the picker's `_bundle_price` equals the list
   total, so the Cart Transform merges at list price.

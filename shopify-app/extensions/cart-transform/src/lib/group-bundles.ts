@@ -13,7 +13,9 @@ export interface CartLine {
 }
 
 export interface CartTransformInput {
-	shop: {
+	// Set by app-backend when it activates this function on a store
+	// (cartTransformCreate), in the app-reserved namespace.
+	cartTransform: {
 		metafield: { value: string } | null;
 	};
 	cart: {
@@ -41,11 +43,10 @@ export interface CartTransformResult {
 export function buildCartTransformOperations(
 	input: CartTransformInput,
 ): CartTransformResult {
-	const parentVariantId = input.shop.metafield?.value;
+	const parentVariantId = input.cartTransform.metafield?.value;
 	if (!parentVariantId) {
-		// No placeholder bundle product configured yet for this store (see
-		// "Configure placeholder bundle product" task) — nothing to merge
-		// into. Matches Shopify's own fallback for an erroring function:
+		// No placeholder bundle product configured yet for this store
+		// (app-backend's store setup hasn't run) — nothing to merge into. Matches Shopify's own fallback for an erroring function:
 		// unmerged lines, not a broken cart.
 		return { operations: [] };
 	}

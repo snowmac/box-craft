@@ -8,7 +8,9 @@ import {
 	generateState,
 	isValidShopDomain,
 } from "./oauth.ts";
+import { scopesCover } from "./scopes.ts";
 import { verifySessionToken } from "./session-token.ts";
+import { ensureStoreSetup, type AdminClient } from "./store-setup.ts";
 
 export interface Env {
 	SHOP_TOKENS: KVNamespace;
@@ -24,6 +26,15 @@ export interface Env {
 }
 
 const STATE_COOKIE = "boxcraft_oauth_state";
+const ADMIN_API_VERSION = "2026-07";
+
+interface ShopRecord {
+	accessToken: string;
+	scope: string;
+	installedAt: string;
+	// Set once ensureStoreSetup has succeeded for this token.
+	setupAt?: string;
+}
 
 export default {
 	async fetch(request: Request, env: Env): Promise<Response> {
@@ -167,7 +178,7 @@ async function handleEmbeddedShell(url: URL, env: Env): Promise<Response> {
 	// Shopify loads this page with a signed id_token instead, and the app is
 	// expected to trade it for an access token. Do that the first time we
 	// see a shop.
-	const installed = await ensureShopToken(url.searchParams.get("id_token"), env);
+	const installed = await ensureShopReady(url.searchParams.get("id_token"), env);
 
 	// Minimal shell: no merchant config here for v1 — the Pick-N picker's
 	// settings live in the theme editor, and guardrail rules are
@@ -194,16 +205,39 @@ async function handleEmbeddedShell(url: URL, env: Env): Promise<Response> {
 	});
 }
 
-// Returns whether the shop has a stored access token after this call.
-async function ensureShopToken(idToken: string | null, env: Env): Promise<boolean> {
+// Makes sure the shop has an access token covering the current scopes and
+// that per-store setup has run. Returns whether both are true afterwards.
+async function ensureShopReady(idToken: string | null, env: Env): Promise<boolean> {
 	if (!idToken) return false;
 	const session = await verifySessionToken(idToken, env.SHOPIFY_CLIENT_ID, env.SHOPIFY_CLIENT_SECRET);
 	if (!session) return false;
+	const key = shopTokenKey(session.shop);
 
-	if (await env.SHOP_TOKENS.get(shopTokenKey(session.shop))) return true;
+	let record = await env.SHOP_TOKENS.get<ShopRecord>(key, "json");
+	// Re-exchange when scopes grew since the stored token was issued (the
+	// merchant approves new scopes, but the old token doesn't gain them).
+	if (!record || !scopesCover(record.scope, env.SHOPIFY_SCOPES)) {
+		record = await exchangeForOfflineToken(session.shop, idToken, env);
+		if (!record) return false;
+		await env.SHOP_TOKENS.put(key, JSON.stringify(record));
+	}
 
+	if (!record.setupAt) {
+		try {
+			await ensureStoreSetup(adminClient(session.shop, record.accessToken));
+		} catch (err) {
+			console.error(`store setup failed for ${session.shop}: ${err}`);
+			return false;
+		}
+		record.setupAt = new Date().toISOString();
+		await env.SHOP_TOKENS.put(key, JSON.stringify(record));
+	}
+	return true;
+}
+
+async function exchangeForOfflineToken(shop: string, idToken: string, env: Env): Promise<ShopRecord | null> {
 	const tokenRequest = buildOfflineTokenExchangeRequest(
-		session.shop,
+		shop,
 		env.SHOPIFY_CLIENT_ID,
 		env.SHOPIFY_CLIENT_SECRET,
 		idToken,
@@ -214,19 +248,28 @@ async function ensureShopToken(idToken: string | null, env: Env): Promise<boolea
 		body: tokenRequest.body,
 	});
 	if (!tokenRes.ok) {
-		console.error(`token exchange failed for ${session.shop}: ${tokenRes.status}`);
-		return false;
+		console.error(`token exchange failed for ${shop}: ${tokenRes.status}`);
+		return null;
 	}
-
 	const { access_token: accessToken, scope } = (await tokenRes.json()) as {
 		access_token: string;
 		scope: string;
 	};
-	await env.SHOP_TOKENS.put(
-		shopTokenKey(session.shop),
-		JSON.stringify({ accessToken, scope, installedAt: new Date().toISOString() }),
-	);
-	return true;
+	return { accessToken, scope, installedAt: new Date().toISOString() };
+}
+
+function adminClient(shop: string, accessToken: string): AdminClient {
+	return async (query, variables = {}) => {
+		const res = await fetch(`https://${shop}/admin/api/${ADMIN_API_VERSION}/graphql.json`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json", "X-Shopify-Access-Token": accessToken },
+			body: JSON.stringify({ query, variables }),
+		});
+		if (!res.ok) throw new Error(`Admin API ${res.status}: ${await res.text()}`);
+		const body = (await res.json()) as { data?: unknown; errors?: unknown };
+		if (body.errors) throw new Error(`Admin API errors: ${JSON.stringify(body.errors)}`);
+		return body.data;
+	};
 }
 
 function shopTokenKey(shop: string): string {

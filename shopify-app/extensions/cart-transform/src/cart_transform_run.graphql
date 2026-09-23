@@ -2,10 +2,10 @@
 # recommends this to keep function execution inside its runtime budget.
 # See Non-Functional Requirements in specs/product/technical-spec.md.
 query CartTransformRunInput {
-  shop {
-    # Set once per store at install time (see "Configure placeholder
-    # bundle product" task) — the merged bundle line's parentVariantId.
-    metafield(namespace: "boxcraft", key: "bundle_parent_variant_id") {
+  # Written by app-backend's store setup when it activates this function
+  # (cartTransformCreate). No namespace = the app-reserved "$app" one.
+  cartTransform {
+    metafield(key: "bundle_parent_variant_id") {
       value
     }
   }

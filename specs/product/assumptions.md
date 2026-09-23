@@ -118,14 +118,22 @@ succeeded, and cleaning up the stored token on `app/uninstalled`.
   misconfiguration. Worth deciding if that's the right failure mode for a
   clearly-broken-setup case versus a real runtime outage.
 
-- **Cart Transform placeholder bundle product**: the function reads the
-  merged line's `parentVariantId` from a shop metafield,
-  `boxcraft.bundle_parent_variant_id`. This namespace/key is my own
-  invention — the "Configure placeholder bundle product" task says this
-  gets set up once per store at install, but doesn't specify how the
-  function should look it up. Whatever writes that metafield during
-  install needs to use this exact namespace/key, or the function needs to
-  be changed to match.
+- **Cart Transform activation and placeholder bundle product (revised
+  2026-09-23)**: a deployed Cart Transform only runs once the app calls
+  `cartTransformCreate` on each store, which the original plan didn't
+  cover. app-backend's `ensureStoreSetup` now does this on first load
+  after install: finds (by tag `boxcraft-bundle-parent`) or creates a
+  "BoxCraft Bundle" product — created via API, so unpublished to any sales
+  channel — then activates the function with the product's variant GID in
+  the cart transform's own metafield (`$app` / `bundle_parent_variant_id`),
+  which the function reads via `cartTransform.metafield(key:)`. This
+  replaced the invented `boxcraft.bundle_parent_variant_id` shop metafield.
+  Needed two new scopes, `write_products` and `write_cart_transforms`
+  (@adam.bourg chose app-created product over a merchant-created one). A
+  stored token is re-exchanged whenever it doesn't cover the current
+  scopes. **Unverified:** whether an unpublished parent variant is
+  accepted by `linesMerge` at checkout, and whether its default inventory
+  tracking causes trouble — the end-to-end checkout test will tell.
 
 - **Bundle pricing via `percentageDecrease` (corrected 2026-09-23)**: the
   plan and Technical Spec said the merged line's price comes from

@@ -10,7 +10,7 @@ const PARENT_VARIANT_ID = "gid://shopify/ProductVariant/999";
 
 function input(lines: CartLine[], metafieldValue: string | null = PARENT_VARIANT_ID): CartTransformInput {
 	return {
-		shop: { metafield: metafieldValue ? { value: metafieldValue } : null },
+		cartTransform: { metafield: metafieldValue ? { value: metafieldValue } : null },
 		cart: { lines },
 	};
 }

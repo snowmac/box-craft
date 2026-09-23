@@ -31,9 +31,12 @@ api_version = "2026-01"
 [access_scopes]
 # read_inventory + read_locations: the Guardrail Worker's backfill script
 # and the webhook consumer's inventory_levels/update subscription both
-# need these. read_products: theme app extension needs variant data for
-# the Pick-N picker config.
-scopes = "read_inventory,read_locations,read_products"
+# need these. write_products (implies read_products): the theme extension
+# reads variant data, and app-backend creates the hidden "BoxCraft Bundle"
+# parent product at install. write_cart_transforms: app-backend activates
+# the Cart Transform function on each store (cartTransformCreate).
+# Keep in sync with SHOPIFY_SCOPES in workers/app-backend/wrangler.toml.
+scopes = "read_inventory,read_locations,write_products,write_cart_transforms"
 
 [auth]
 redirect_urls = [ "https://box-craft-app-backend.adam-bourg.workers.dev/auth/callback" ]
