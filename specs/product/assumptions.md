@@ -118,6 +118,16 @@ succeeded, and cleaning up the stored token on `app/uninstalled`.
   misconfiguration. Worth deciding if that's the right failure mode for a
   clearly-broken-setup case versus a real runtime outage.
 
+- **Unknown variants block, they don't fail open (open decision,
+  2026-09-23)**: `/check` treats a variant with no bitmap entry as stocked
+  nowhere, so any bundle containing it is blocked. That happens for every
+  product created after the last backfill until the next one runs (the
+  webhook consumer drops events for variants missing from the
+  inventory-item map). This contradicts the fail-open principle used for
+  KV errors. Options: treat missing entries as "unknown — ignore in the
+  intersection", or have the webhook consumer resolve unknown inventory
+  items via the Admin API. Needs a decision.
+
 - **Cart Transform activation and placeholder bundle product (revised
   2026-09-23)**: a deployed Cart Transform only runs once the app calls
   `cartTransformCreate` on each store, which the original plan didn't

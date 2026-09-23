@@ -7,6 +7,12 @@ export function bitmapKey(variantGid: string): string {
 	return `sku:${variantGid}`;
 }
 
+// The storefront (Liquid's variant.id, /cart/add.js) uses numeric variant
+// ids, but the bitmap is keyed by Admin API GID. Normalize at the lookup.
+export function toVariantGid(variantId: string): string {
+	return /^\d+$/.test(variantId) ? `gid://shopify/ProductVariant/${variantId}` : variantId;
+}
+
 // Shopify's inventory_levels/update webhook carries inventory_item_id, not
 // a variant GID, so the webhook consumer needs a lookup to translate one to
 // the other before it can write to the (variant-GID-keyed) bitmap. Stored

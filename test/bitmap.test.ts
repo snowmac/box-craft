@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { applyLocationUpdates, bitmapKey } from "../shared/bitmap.ts";
+import { applyLocationUpdates, bitmapKey, toVariantGid } from "../shared/bitmap.ts";
 
 test("bitmapKey namespaces the raw identifier", () => {
 	assert.equal(bitmapKey("gid://shopify/ProductVariant/1"), "sku:gid://shopify/ProductVariant/1");
@@ -30,4 +30,16 @@ test("applyLocationUpdates collapses a burst of updates for one location to its 
 	}
 	const result = applyLocationUpdates([], pending);
 	assert.deepEqual(result, []);
+});
+
+test("toVariantGid turns the storefront's numeric variant id into a GID", () => {
+	assert.equal(toVariantGid("55081529966958"), "gid://shopify/ProductVariant/55081529966958");
+});
+
+test("toVariantGid leaves a GID unchanged", () => {
+	assert.equal(toVariantGid("gid://shopify/ProductVariant/1"), "gid://shopify/ProductVariant/1");
+});
+
+test("toVariantGid leaves anything else unchanged rather than guessing", () => {
+	assert.equal(toVariantGid("abc"), "abc");
 });

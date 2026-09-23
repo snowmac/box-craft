@@ -279,6 +279,22 @@ write_cart_transforms,write_products`) and store setup ran cleanly:
 `gid://shopify/CartTransform/146080110` active with the parent variant in
 its `$app` metafield.
 
+## 2026-09-23 — Storefront test on the dev store
+
+- The generated test theme couldn't render app blocks; @adam.bourg
+  switched the store to the Savor theme and added the Pick-N block via a
+  theme-editor deep link (`addAppBlockId=<client_id>/pick-n-picker`).
+  Automation couldn't drive the theme editor (blank captures), so that
+  step was manual.
+- First real picker test: 4 boards all stocked at Shop location were
+  **wrongly blocked**. Cause: the storefront uses numeric variant ids
+  (`variant.id`) while the bitmap is keyed by GID, so every lookup
+  missed. Fixed in the Guardrail Worker (`toVariantGid` normalization at
+  lookup, 3 tests).
+- Noticed along the way: selected picker cards have no visual selected
+  state (styling gap), and unknown variants block instead of failing open
+  (logged as an open decision in `assumptions.md`).
+
 ## Where things stand now
 
 **Live:** Installed on `box-craft-demo` with a stored access token;

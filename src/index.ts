@@ -1,4 +1,4 @@
-import { bitmapKey, type BitmapEntry } from "../shared/bitmap";
+import { bitmapKey, toVariantGid, type BitmapEntry } from "../shared/bitmap";
 import { checkCompatibility, type VariantLocations } from "../shared/intersection";
 import { preflightResponse, withCors } from "./cors";
 
@@ -52,7 +52,7 @@ async function handleCheck(request: Request, env: Env): Promise<Response> {
 	try {
 		selections = await Promise.all(
 			variantIds.map(async (variantId) => {
-				const raw = await env.LOCATION_BITMAP.get(bitmapKey(variantId));
+				const raw = await env.LOCATION_BITMAP.get(bitmapKey(toVariantGid(variantId)));
 				const entry = raw ? (JSON.parse(raw) as BitmapEntry) : null;
 				return { variantId, locations: entry?.locations ?? [] };
 			}),
