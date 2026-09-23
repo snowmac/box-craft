@@ -18,6 +18,7 @@ function input(lines: CartLine[], metafieldValue: string | null = PARENT_VARIANT
 function line(overrides: Partial<CartLine> & { id: string }): CartLine {
 	return {
 		quantity: 1,
+		cost: { totalAmount: { amount: "20.00" } },
 		bundleId: null,
 		bundlePrice: null,
 		sellingPlanAllocation: null,
@@ -37,7 +38,7 @@ test("lines with no _bundle_id pass through untouched", () => {
 	assert.deepEqual(result.operations, []);
 });
 
-test("N lines sharing one _bundle_id merge into one operation with summed price", () => {
+test("N lines sharing one _bundle_id merge into one operation", () => {
 	const result = buildCartTransformOperations(
 		input([
 			line({ id: "gid://shopify/CartLine/1", bundleId: { value: "bundle-a" }, bundlePrice: { value: "40.00" } }),
@@ -49,7 +50,8 @@ test("N lines sharing one _bundle_id merge into one operation with summed price"
 	assert.equal(result.operations.length, 1);
 	const op = result.operations[0].linesMerge;
 	assert.equal(op.parentVariantId, PARENT_VARIANT_ID);
-	assert.equal(op.price.fixedPricePerUnit.amount, "40.00");
+	// 3 lines x $20 = $60 at list, bundle price $40 -> 33.3333% off
+	assert.equal(op.price?.percentageDecrease.value, "33.3333");
 	assert.deepEqual(
 		op.cartLines.map((l) => l.cartLineId).sort(),
 		["gid://shopify/CartLine/1", "gid://shopify/CartLine/2", "gid://shopify/CartLine/3"],
@@ -128,6 +130,36 @@ test("no placeholder bundle product configured yields no operations rather than 
 test("a bundle line missing its price is skipped rather than guessing a price", () => {
 	const result = buildCartTransformOperations(
 		input([line({ id: "gid://shopify/CartLine/1", bundleId: { value: "bundle-a" } })]),
+	);
+	assert.deepEqual(result.operations, []);
+});
+
+test("bundle price is expressed as a percentage decrease off the merged lines' total", () => {
+	const result = buildCartTransformOperations(
+		input([
+			line({ id: "gid://shopify/CartLine/1", cost: { totalAmount: { amount: "30.00" } }, bundleId: { value: "bundle-a" }, bundlePrice: { value: "45.00" } }),
+			line({ id: "gid://shopify/CartLine/2", quantity: 2, cost: { totalAmount: { amount: "30.00" } }, bundleId: { value: "bundle-a" }, bundlePrice: { value: "45.00" } }),
+		]),
+	);
+	// $60 at list, $45 bundle price -> 25% off
+	assert.equal(result.operations[0].linesMerge.price?.percentageDecrease.value, "25");
+});
+
+test("bundle price at or above the lines' total merges with no price adjustment", () => {
+	// percentageDecrease can't go negative, so a bundle priced above list
+	// can't be charged as such; merge at list price rather than drop the bundle.
+	const result = buildCartTransformOperations(
+		input([
+			line({ id: "gid://shopify/CartLine/1", bundleId: { value: "bundle-a" }, bundlePrice: { value: "25.00" } }),
+		]),
+	);
+	assert.equal(result.operations.length, 1);
+	assert.equal(result.operations[0].linesMerge.price, undefined);
+});
+
+test("an unparseable bundle price is skipped rather than guessing a price", () => {
+	const result = buildCartTransformOperations(
+		input([line({ id: "gid://shopify/CartLine/1", bundleId: { value: "bundle-a" }, bundlePrice: { value: "abc" } })]),
 	);
 	assert.deepEqual(result.operations, []);
 });

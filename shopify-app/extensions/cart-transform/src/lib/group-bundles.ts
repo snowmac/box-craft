@@ -1,11 +1,12 @@
 // Core Cart Transform business logic, kept as a pure function independent
 // of Shopify's Functions runtime so it's directly unit-testable in plain
-// Node (see ../../test/group-bundles.test.ts). run.ts is the thin adapter
+// Node (see ../../test/group-bundles.test.ts). cart_transform_run.ts is the thin adapter
 // that wires this into the actual Shopify Function entry point.
 
 export interface CartLine {
 	id: string;
 	quantity: number;
+	cost: { totalAmount: { amount: string } };
 	bundleId: { value: string } | null;
 	bundlePrice: { value: string } | null;
 	sellingPlanAllocation: { sellingPlan: { id: string } } | null;
@@ -24,9 +25,10 @@ export interface LinesMergeOperation {
 	linesMerge: {
 		cartLines: Array<{ cartLineId: string; quantity: number }>;
 		parentVariantId: string;
-		price: {
-			fixedPricePerUnit: {
-				amount: string;
+		// Omitted when the bundle price is at or above list — see below.
+		price?: {
+			percentageDecrease: {
+				value: string;
 			};
 		};
 	};
@@ -67,18 +69,26 @@ export function buildCartTransformOperations(
 
 	const operations: LinesMergeOperation[] = [];
 	for (const lines of groups.values()) {
-		const bundlePrice = lines[0]?.bundlePrice?.value;
-		if (!bundlePrice) continue; // malformed bundle (storefront bug) — skip rather than guess a price
+		const bundlePrice = Number(lines[0]?.bundlePrice?.value);
+		// Missing or unparseable price is a storefront bug — skip rather than guess.
+		if (!Number.isFinite(bundlePrice) || bundlePrice < 0) continue;
 
-		operations.push({
-			linesMerge: {
-				cartLines: lines.map((l) => ({ cartLineId: l.id, quantity: l.quantity })),
-				parentVariantId,
-				price: {
-					fixedPricePerUnit: { amount: bundlePrice },
-				},
-			},
-		});
+		const listTotal = lines.reduce((sum, l) => sum + Number(l.cost.totalAmount.amount), 0);
+
+		const merge: LinesMergeOperation["linesMerge"] = {
+			cartLines: lines.map((l) => ({ cartLineId: l.id, quantity: l.quantity })),
+			parentVariantId,
+		};
+		// linesMerge only accepts a percentageDecrease, not a fixed price, so
+		// the bundle price is expressed as a discount off the merged lines'
+		// list total. A bundle priced at or above list can't be represented
+		// (no negative decrease) and merges at list price instead.
+		if (bundlePrice < listTotal) {
+			const percent = (1 - bundlePrice / listTotal) * 100;
+			merge.price = { percentageDecrease: { value: String(Math.round(percent * 10000) / 10000) } };
+		}
+
+		operations.push({ linesMerge: merge });
 	}
 
 	return { operations };

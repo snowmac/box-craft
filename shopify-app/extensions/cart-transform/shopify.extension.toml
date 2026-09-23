@@ -1,21 +1,19 @@
-# Field names/shape follow Shopify's documented cart_transform function
-# extension config as of this writing, but haven't been validated against
-# a real `shopify app deploy` (no Partner-linked app in this environment —
-# see specs/product/assumptions.md). Re-verify against
-# shopify.dev/docs/api/functions before first deploy.
+# Shape follows the official functions-cart-transform-js template from
+# Shopify/extensions-templates. build.command is empty because the CLI
+# compiles JS functions itself (typegen + esbuild + javy -> wasm).
 
-api_version = "2026-01"
+api_version = "2026-07"
 
 [[extensions]]
 name = "boxcraft-cart-transform"
 handle = "boxcraft-cart-transform"
 type = "function"
 
-[[extensions.targeting]]
-target = "cart.transform.run"
-input_query = "src/cart_transform_run.graphql"
-export = "run"
+  [[extensions.targeting]]
+  target = "cart.transform.run"
+  input_query = "src/cart_transform_run.graphql"
+  export = "cart-transform-run"
 
-[extensions.build]
-command = "npm run build"
-path = "dist/function.wasm"
+  [extensions.build]
+  command = ""
+  path = "dist/function.wasm"

@@ -21,7 +21,7 @@ BoxCraft is a Shopify app that lets multi-warehouse DTC brands (consumables, bev
 | Operation | Purpose | Plan requirement |
 | --- | --- | --- |
 | `lineExpand` | Unpack a bundle line to show its components | All plans |
-| `linesMerge` | Collapse multiple lines into one bundle line, with its own price allocation (`fixedPricePerUnit`) | All plans |
+| `linesMerge` | Collapse multiple lines into one bundle line, with its own price adjustment (`percentageDecrease` only) | All plans |
 | `lineUpdate` | Override price/title/image on an existing line without changing structure | Shopify Plus and dev stores only |
 
 BoxCraft only needs `linesMerge` and `lineExpand` for one-time-purchase bundling — real single-line checkout presentation works on every plan, not just Plus.

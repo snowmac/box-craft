@@ -124,23 +124,28 @@ succeeded, and cleaning up the stored token on `app/uninstalled`.
   install needs to use this exact namespace/key, or the function needs to
   be changed to match.
 
-- **`fixedPricePerUnit` semantics**: implemented so the merged line's
-  `fixedPricePerUnit` equals the `_bundle_price` cart attribute directly
-  (one bundle = one priced unit), rather than dividing by a summed
-  quantity. This matches the acceptance criteria's literal wording ("matches
-  `_bundle_price` attribute value exactly") but **the exact quantity/pricing
-  semantics of Shopify's `linesMerge` operation haven't been independently
-  verified against live Shopify docs or a real deploy** — flagged in
-  `run.ts` for re-verification before shipping.
+- **Bundle pricing via `percentageDecrease` (corrected 2026-09-23)**: the
+  plan and Technical Spec said the merged line's price comes from
+  `price.fixedPricePerUnit`, but Shopify's actual `LinesMergeOperation`
+  schema only accepts `price.percentageDecrease` — `fixedPricePerUnit`
+  exists only on expand/update operations (and `update` is Plus-only). The
+  original code would have been rejected at checkout. Now the function
+  converts `_bundle_price` to a percentage off the merged lines' summed
+  `cost.totalAmount`, rounded to 4 decimal places (so the charged total can
+  differ from `_bundle_price` by a fraction of a cent on large carts). A
+  bundle priced at or above list can't be expressed (no negative decrease)
+  and merges at list price. `_bundle_price` is the **total** bundle price,
+  not per-unit.
 
-- **Cart Transform JS runtime adapter shape**: `run.ts`'s exported `run(input)`
-  function is my best understanding of what Shopify's JS Functions runtime
-  (`@shopify/shopify_function`) expects, but wasn't generated from or
-  checked against a real `shopify app generate extension` scaffold (no
-  Partner-linked app available to generate one from). Re-verify this and
-  the `shopify.extension.toml` field names against
-  shopify.dev/docs/api/functions and `shopify app function typegen` before
-  the first real deploy.
+- **Cart Transform JS runtime adapter shape (verified 2026-09-23)**:
+  restructured to match Shopify's official `functions-cart-transform-js`
+  template (Shopify/extensions-templates): `src/index.ts` re-exports
+  `cartTransformRun` from `src/cart_transform_run.ts`, toml targets
+  `export = "cart-transform-run"`, `build.command = ""` (the CLI compiles
+  JS itself), `@shopify/shopify_function` dependency, and a checked-in
+  `schema.graphql`. `shopify app function build` compiles it to wasm, and
+  `shopify app function run` against a sample cart returns the expected
+  merge (~388K instructions vs. the 11M limit).
 
 - **Theme extension guardrail wiring**: the app block has a merchant-facing
   "Guardrail Worker URL" text setting that a merchant would have to
@@ -229,9 +234,9 @@ succeeded, and cleaning up the stored token on `app/uninstalled`.
    actually know about this redirect URL yet, so a real install attempt
    will fail with a redirect_uri mismatch even though the Worker itself is
    live. This also registers the `app/uninstalled` webhook subscription.
-   Also still open: the Cart Transform function's runtime adapter shape in
-   `run.ts` needs verification against a real
-   `shopify app generate extension` scaffold or `shopify app deploy`.
+   It also registers the `inventory_levels/update` subscription pointing
+   at the webhook-consumer Worker (added 2026-09-23 — it was missing, so
+   the bitmap would never have updated after backfill).
 4. **Set up a dev store with 2+ locations** with split inventory to
    actually exercise the full/partial/zero-overlap guardrail scenarios —
    nothing here has been checked against real Shopify inventory data yet.

@@ -48,7 +48,7 @@ Guardrail check = set intersection across the `locations` arrays of every varian
 | Property | Purpose |
 | --- | --- |
 | `_bundle_id` | Groups N cart lines into one bundle for the Cart Transform function to merge |
-| `_bundle_price` | Computed bundle price, read by the function for `fixedPricePerUnit` allocation |
+| `_bundle_price` | Computed bundle price, total bundle price, converted by the function to a `percentageDecrease` off the merged lines' list total |
 
 No merchant-facing metafields required for v1 — keeps setup to "install app, add theme block" with no product data migration.
 
@@ -82,7 +82,7 @@ Receives Shopify's standard `inventory_levels/update` payload (`inventory_item_i
 
 **Cart Transform function — `cart.transform.run` target**
 
-Input query requests only `cart.lines` (id, quantity, attribute `_bundle_id`, cost) — per Shopify's own guidance, request only the fields the function needs to keep function execution fast. Output: one `linesMerge` operation per distinct `_bundle_id` group found in the cart, with `parentVariantId` set to a placeholder "bundle" product/variant the merchant configures once at install, and `price.fixedPricePerUnit` read from the `_bundle_price` line attribute.
+Input query requests only `cart.lines` (id, quantity, attribute `_bundle_id`, cost) — per Shopify's own guidance, request only the fields the function needs to keep function execution fast. Output: one `linesMerge` operation per distinct `_bundle_id` group found in the cart, with `parentVariantId` set to a placeholder "bundle" product/variant the merchant configures once at install, and `price.percentageDecrease` computed from the `_bundle_price` line attribute against the merged lines' summed cost (`linesMerge` doesn't accept a fixed price).
 
 ## Sequence Flows
 

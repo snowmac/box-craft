@@ -146,6 +146,34 @@ Pulled that in, cleaned up now-stale "placeholder"/"not yet provisioned"
 comments across both `wrangler.toml` files and `shopify.app.toml`, and
 updated `assumptions.md`'s manual-steps checklist to match.
 
+## 2026-09-23 — Pre-deploy fixes to the Shopify app
+
+Reviewed the Shopify side against Shopify's official templates before the
+first `shopify app deploy`. Found and fixed three things that would have
+broken it:
+
+- **Missing `inventory_levels/update` webhook subscription.**
+  `shopify.app.toml` only declared `app/uninstalled`, so Shopify would
+  never have sent inventory events to the webhook-consumer and the bitmap
+  would have gone stale after backfill. Added it with the consumer's
+  absolute URL (checked live via `/health`).
+- **Cart Transform pricing used a field that doesn't exist.**
+  `linesMerge` only accepts `price.percentageDecrease`; `fixedPricePerUnit`
+  is expand/update-only. The function now converts `_bundle_price` into a
+  percentage off the merged lines' list total. Tests updated and extended
+  (12 passing).
+- **Cart Transform extension couldn't build.** Its toml ran
+  `npm run build`, which didn't exist. Restructured to the official
+  `functions-cart-transform-js` layout (`src/index.ts`,
+  `export = "cart-transform-run"`, empty build command,
+  `@shopify/shopify_function`, checked-in `schema.graphql`). Verified:
+  `shopify app function build` compiles to wasm, and `shopify app function
+  run` against a sample cart returns the expected merge.
+
+Noted along the way: the Pick-N picker sets `_bundle_price` to the plain
+sum of the selected variants' prices, so there's no bundle discount yet —
+bundles currently check out at list price.
+
 ## Where things stand now
 
 **Live:** Guardrail Worker (`box-craft`), webhook consumer, app-backend —
@@ -160,8 +188,8 @@ all three Cloudflare Workers deployed with real bindings/secrets.
 - Dev store needs 2+ locations with split test inventory (currently just
   created, not yet configured this way).
 - `scripts/backfill.ts` hasn't been run against real data yet.
-- Cart Transform function's runtime adapter shape (`run.ts`) is
-  unverified against a real `shopify app deploy`.
+- No bundle discount: the picker's `_bundle_price` equals the list
+  total, so the Cart Transform merges at list price.
 - No integration/load tests, no real end-to-end checkout test on the dev
   store yet.
 - Billing test flow, App Store listing/submission, Go-to-Market tasks —

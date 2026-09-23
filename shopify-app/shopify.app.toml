@@ -22,6 +22,12 @@ api_version = "2026-01"
   topics = [ "app/uninstalled" ]
   uri = "/webhooks/app/uninstalled"
 
+  # Handled by workers/webhook-consumer (a separate Worker from
+  # application_url), so this needs an absolute URI.
+  [[webhooks.subscriptions]]
+  topics = [ "inventory_levels/update" ]
+  uri = "https://box-craft-webhook-consumer.adam-bourg.workers.dev/webhooks/inventory-levels-update"
+
 [access_scopes]
 # read_inventory + read_locations: the Guardrail Worker's backfill script
 # and the webhook consumer's inventory_levels/update subscription both
