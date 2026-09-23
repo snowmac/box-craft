@@ -343,6 +343,29 @@ the bundle product via the API, reloaded the app → setup republished it
 (`UNLISTED`, on Online Store) and checkout still merges into one
 "BoxCraft Bundle" line.
 
+## 2026-09-23 — Admin/ops plan: T1 data layer foundation
+
+Started executing `specs/product/admin-and-ops-plan.md` (agent-executable
+plan for the merchant admin page, ops console, and D1-backed event/config
+data layer). Working through it task by task (T1–T15), committing and
+pushing after each.
+
+**T1 done:** `db/migrations/0001_init.sql` (events, shop_config, boxes,
+sync_runs tables per D1 in the plan). `shared/events.ts`: pure
+`buildEventRow()` (defaults, PII-key rejection via pattern match on
+email/name/phone/address/customer, truncates `data` over ~2KB into a
+still-valid-JSON wrapper rather than corrupting it) plus `recordEvent()`,
+which never throws synchronously — even a PII-rejected or DB-down write
+can't break the caller's request (D4). 8 new tests.
+
+Added `[[d1_databases]]` (commented placeholder, same pattern as the KV
+namespaces) and `[observability] enabled = true` to all three existing
+`wrangler.toml` files. Extended `scripts/setup-cloudflare.mjs` to create
+the `boxcraft` D1 database, apply the migration, and wire the real
+`database_id` into all three — this needs a real Cloudflare login this
+session doesn't have, same reason the KV namespace/secrets steps were
+scripted rather than run directly.
+
 ## Where things stand now (updated 2026-09-23, end of day)
 
 ### Done and verified on the dev store (`box-craft-demo`)

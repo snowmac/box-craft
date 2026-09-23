@@ -2,6 +2,9 @@ name = "box-craft-app-backend"
 main = "src/index.ts"
 compatibility_date = "2026-09-22"
 
+[observability]
+enabled = true
+
 [vars]
 SHOPIFY_CLIENT_ID = "d3f114303ecd6de5e650b4bdb96106f6"
 SHOPIFY_SCOPES = "read_inventory,read_locations,write_products,write_cart_transforms,write_publications"
@@ -19,3 +22,10 @@ id = "0a36a18ea3344074a5bec4e4c2575f1e"
 # secrets (not stored here). To rotate either:
 #   npx wrangler secret put SHOPIFY_CLIENT_SECRET
 #   npx wrangler secret put SHOPIFY_WEBHOOK_SECRET
+
+# Same D1 database as the Guardrail Worker's DB binding (see
+# ../../wrangler.toml) — not yet provisioned.
+# [[d1_databases]]
+# binding = "DB"
+# database_name = "boxcraft"
+# database_id = ""

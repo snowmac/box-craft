@@ -1,9 +1,13 @@
 #!/usr/bin/env node
 // Provisions the Cloudflare side of workers/webhook-consumer and
-// workers/app-backend: creates the SHOP_TOKENS KV namespace, sets
+// workers/app-backend: creates the SHOP_TOKENS KV namespace, creates the
+// shared "boxcraft" D1 database and applies its migrations, sets
 // secrets, deploys both Workers (direct upload — creates them on the
 // account if they don't exist yet), and wires the resulting app-backend
 // URL back into its own wrangler.toml and shopify-app/shopify.app.toml.
+// Also wires the D1 database id into the root Guardrail Worker's
+// wrangler.toml (that Worker deploys separately via Cloudflare Workers
+// Build, not this script — this only patches its config file).
 //
 // Prerequisites (all local, none of this runs in the Claude session):
 //   1. `npx wrangler login` — this script assumes you're already
@@ -28,9 +32,11 @@
 // wrapper instead, which prompts with masked input:
 //   ./scripts/setup-cloudflare.sh
 //
-// Safe to re-run: skips KV namespace creation if one's already wired in,
-// and `wrangler secret put`/`wrangler deploy` are both naturally
-// idempotent.
+// Safe to re-run: skips KV namespace and D1 database creation if either
+// is already wired in (which also means migrations only get applied on
+// the first run — apply new ones by hand with
+// `npx wrangler d1 migrations apply boxcraft --remote`), and
+// `wrangler secret put`/`wrangler deploy` are both naturally idempotent.
 //
 // What this script deliberately does NOT do (see printed summary at the
 // end, and specs/product/assumptions.md):
@@ -47,10 +53,14 @@ import path from "node:path";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
+const rootDir = repoRoot;
 const webhookConsumerDir = path.join(repoRoot, "workers/webhook-consumer");
 const appBackendDir = path.join(repoRoot, "workers/app-backend");
+const rootWranglerToml = path.join(rootDir, "wrangler.toml");
+const webhookConsumerWranglerToml = path.join(webhookConsumerDir, "wrangler.toml");
 const appBackendWranglerToml = path.join(appBackendDir, "wrangler.toml");
 const shopifyAppToml = path.join(repoRoot, "shopify-app/shopify.app.toml");
+const allWranglerTomls = [rootWranglerToml, webhookConsumerWranglerToml, appBackendWranglerToml];
 
 function log(step, message) {
 	console.log(`\n[${step}] ${message}`);
@@ -125,7 +135,53 @@ if (hasActiveBinding) {
 	log("kv", `Wired namespace id ${namespaceId} into workers/app-backend/wrangler.toml`);
 }
 
-// --- Step 2: deploy webhook-consumer (bare, no secrets yet) --------------
+// --- Step 2: D1 database "boxcraft", shared by all three Workers --------
+
+let rootToml = readFileSync(rootWranglerToml, "utf8");
+const hasD1Binding = /^\[\[d1_databases\]\]/m.test(rootToml);
+
+if (hasD1Binding) {
+	log("d1", "D1 database binding already present in wrangler.toml, skipping creation.");
+} else {
+	log("d1", "Creating D1 database 'boxcraft'...");
+	const output = run("npx", ["wrangler", "d1", "create", "boxcraft"], { cwd: rootDir });
+	console.log(output.trim());
+
+	const match = output.match(/database_id\s*=\s*"([a-f0-9-]+)"/);
+	if (!match) {
+		fail(
+			"Couldn't parse a database id out of `wrangler d1 create` output. " +
+				"Add the [[d1_databases]] block to all three wrangler.toml files by hand using the database_id shown above, then run `npx wrangler d1 migrations apply boxcraft --remote` from the repo root.",
+		);
+	}
+	const databaseId = match[1];
+
+	rootToml = rootToml.replace(
+		/# \[\[d1_databases\]\]\n# binding = "DB"\n# database_name = "boxcraft"\n# database_id = ""\n# migrations_dir = "db\/migrations"/,
+		`[[d1_databases]]\nbinding = "DB"\ndatabase_name = "boxcraft"\ndatabase_id = "${databaseId}"\nmigrations_dir = "db/migrations"`,
+	);
+	writeFileSync(rootWranglerToml, rootToml);
+
+	for (const tomlPath of [webhookConsumerWranglerToml, appBackendWranglerToml]) {
+		const content = readFileSync(tomlPath, "utf8");
+		const updated = content.replace(
+			/# \[\[d1_databases\]\]\n# binding = "DB"\n# database_name = "boxcraft"\n# database_id = ""/,
+			`[[d1_databases]]\nbinding = "DB"\ndatabase_name = "boxcraft"\ndatabase_id = "${databaseId}"`,
+		);
+		if (updated === content) {
+			fail(`Couldn't find the commented [[d1_databases]] block in ${tomlPath} to replace.`);
+		}
+		writeFileSync(tomlPath, updated);
+	}
+	log("d1", `Wired database id ${databaseId} into all three wrangler.toml files`);
+
+	log("d1", "Applying migrations to boxcraft (remote)...");
+	console.log(
+		run("npx", ["wrangler", "d1", "migrations", "apply", "boxcraft", "--remote"], { cwd: rootDir }),
+	);
+}
+
+// --- Step 3: deploy webhook-consumer (bare, no secrets yet) --------------
 //
 // Secrets have to come after the first deploy: `wrangler secret put`
 // attaches a secret to the Worker's "currently deployed" version, and a
@@ -136,7 +192,7 @@ if (hasActiveBinding) {
 log("deploy", "Deploying webhook-consumer...");
 console.log(run("npx", ["wrangler", "deploy"], { cwd: webhookConsumerDir }));
 
-// --- Step 3: deploy app-backend, capture its URL -------------------------
+// --- Step 4: deploy app-backend, capture its URL -------------------------
 
 log("deploy", "Deploying app-backend...");
 const deployOutput = run("npx", ["wrangler", "deploy"], { cwd: appBackendDir });
@@ -154,7 +210,7 @@ if (!urlMatch) {
 const appUrl = urlMatch[0];
 log("url", `Deployed app-backend at ${appUrl}`);
 
-// --- Step 4: wire the real URL into config -------------------------------
+// --- Step 5: wire the real URL into config -------------------------------
 
 appBackendToml = readFileSync(appBackendWranglerToml, "utf8");
 appBackendToml = appBackendToml.replace(
@@ -175,12 +231,12 @@ appToml = appToml.replace(
 writeFileSync(shopifyAppToml, appToml);
 log("config", "Updated APP_URL in wrangler.toml and application_url/redirect_urls in shopify.app.toml");
 
-// --- Step 5: redeploy app-backend so it picks up the new APP_URL var ----
+// --- Step 6: redeploy app-backend so it picks up the new APP_URL var ----
 
 log("deploy", "Redeploying app-backend with the real APP_URL...");
 console.log(run("npx", ["wrangler", "deploy"], { cwd: appBackendDir }));
 
-// --- Step 6: secrets -------------------------------------------------------
+// --- Step 7: secrets -------------------------------------------------------
 //
 // Both Workers now have a deployed version, so `wrangler secret put` can
 // attach to it (and auto-deploys the secret immediately — no extra
@@ -208,25 +264,17 @@ putSecret(appBackendDir, "SHOPIFY_WEBHOOK_SECRET", webhookSecret);
 
 console.log(`
 Done. Deployed:
+  - D1 database "boxcraft" (created + migrated, if it wasn't already)
   - workers/webhook-consumer  (secret set, live)
   - workers/app-backend       (secrets set, live at ${appUrl})
 
-Still needed — none of this is scriptable with just a Cloudflare login:
-  1. Git-connect both Workers to Cloudflare Workers Build projects if you
-     want auto-deploy-on-push (Workers & Pages → Import a repository →
-     Root directory = workers/webhook-consumer or workers/app-backend).
-     They're already live via this script's direct deploy either way.
-  2. Push the updated shopify.app.toml config to your Partner app —
-     needs \`shopify login\` (out of scope here):
-       cd shopify-app && shopify app deploy
-     This registers the real redirect URL and the app/uninstalled
-     webhook subscription with Shopify.
-  3. Configure Managed Pricing plans in the Partner Dashboard.
-  4. Create the dev store (2+ locations, split inventory) and a custom
-     app on it for SHOPIFY_ADMIN_ACCESS_TOKEN, then run scripts/backfill.ts.
+The root Guardrail Worker (box-craft) deploys separately via Cloudflare
+Workers Build on push to main — this script only patched its
+wrangler.toml with the D1 binding. Push this commit so it redeploys
+with the new binding active.
 
 Don't forget to commit the config changes this script made:
-  git add workers/app-backend/wrangler.toml shopify-app/shopify.app.toml
-  git commit -m "Wire in real app-backend deploy URL"
+  git add wrangler.toml workers/webhook-consumer/wrangler.toml workers/app-backend/wrangler.toml shopify-app/shopify.app.toml
+  git commit -m "Wire in D1 database (and app-backend deploy URL, if new)"
   git push
 `);
