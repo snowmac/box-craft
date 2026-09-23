@@ -6,10 +6,21 @@ compatibility_date = "2026-09-22"
 enabled = true
 
 [vars]
-# Only used by T14's "force token re-exchange" action, which needs to call
-# Shopify's OAuth token endpoint the same way app-backend does. Not
-# sensitive on its own (same value as shopify.app.toml's client_id).
+# Not currently called from here (see actions.ts's forceSetupReRun — the
+# operator has no id_token to actually exchange, so that action just
+# clears setupAt and lets app-backend's own next page load redo the real
+# OAuth work) — kept for parity with the plan's declared bindings and in
+# case a future action needs it. Not sensitive on its own (same value as
+# shopify.app.toml's client_id).
 SHOPIFY_CLIENT_ID = "d3f114303ecd6de5e650b4bdb96106f6"
+
+# T14: the three public Workers' own URLs, for the Overview page's health
+# checks (server-side GET /health) and the Guardrail tester's live /check
+# call. Same values as shopify-app/extensions/pick-n-picker's default
+# guardrail_worker_url setting and the other two wrangler.toml files.
+GUARDRAIL_WORKER_URL = "https://box-craft.adam-bourg.workers.dev"
+WEBHOOK_CONSUMER_URL = "https://box-craft-webhook-consumer.adam-bourg.workers.dev"
+APP_BACKEND_URL = "https://box-craft-app-backend.adam-bourg.workers.dev"
 
 # Same KV namespaces as the other Workers — this console only ever reads
 # them (by convention; nothing in the bindings themselves enforces that).

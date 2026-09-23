@@ -906,6 +906,100 @@ real views (Overview, Store detail, Events explorer, Errors, KV
 inspector, Guardrail tester) and the four actions on top of this same
 auth gate.
 
+**T14 done — Ops console views.** All six views and four actions,
+same lightweight-HTML rules, server-rendered (unlike the merchant
+admin page, the console's own cookie is already sent automatically by
+the browser on every request, so views don't need App Bridge or a
+client-side session-token fetch wrapper at all — most of it works as
+plain GET/POST forms with zero JS).
+
+New modules: `queries.ts` (all the console's own D1/KV reads —
+`listShops`/`loadOverviewShops`, `checkWorkerHealth`, per-shop
+`getRecentEventsForShop`/`getSyncHistory`, a filtered+paginated
+`queryEvents`, and `getErrorGroups`), `actions.ts` (the four operator
+actions), `kv-inspector.ts` and `guardrail-tester.ts` (each view's
+non-HTML logic), `layout.ts` + `views.ts` (HTML), `console.css.ts` +
+`console.js.ts` (same template-string-export pattern as the merchant
+admin page, for the same Node-vs-wrangler reason).
+
+Reused rather than duplicated: `ensureStoreSetup`, `adminClient`,
+`runSync`, `getLastSyncRun`, `checkSetupStatus`, `listBoxes`, and
+`getShopConfig` are all imported directly from app-backend's own
+`src/` (and `shared/`) — confirmed this resolves and typechecks
+cleanly under both Node's direct execution and wrangler's bundler
+before committing to the approach, rather than reimplementing
+security-sensitive OAuth/setup logic a second time in a second
+package. `performance.ts`'s `windowDays` was widened from the
+merchant admin page's `7 | 30` union to a plain `number` so the
+Overview's 24-hour window (`loadPerformanceMetrics(db, shop, 1)`)
+could reuse the same aggregation instead of a third copy of it — the
+merchant-facing `/api/performance` route still only accepts 7 or 30,
+unaffected.
+
+Per-view notes:
+- **Overview** — one row per shop (enumerated from `SHOP_TOKENS`,
+  there's no separate shops table) with installed/setup/scopes/last
+  sync/24h guardrail-checks/blocked%/errors, plus the three public
+  Workers' live `/health` status fetched server-side.
+- **Store detail** — config, boxes, last 50 events, sync history, and
+  a live Admin API check for bundle-product-published/cart-transform-
+  active (reusing T12's `setup-status.ts`). Token scope is shown;
+  the access token itself never is — asserted directly in a test.
+- **Events explorer** — filters by shop/source/type/level/time range
+  as GET query params (so the URL is shareable/bookmarkable),
+  LIMIT/OFFSET pagination, `<details>`/`<summary>` for the JSON `data`
+  column (native HTML, no JS needed), and an auto-refresh checkbox
+  that sets `?auto=1` and `setInterval(() => location.reload(), 5000)`
+  — a full-page reload every 5s rather than a partial-fragment fetch,
+  simplest thing that satisfies "poll 5s" without a second endpoint.
+- **Errors** — `level='error'` events grouped by a normalized
+  where/message key. Turned out the four call sites that ever set
+  `level:'error'` don't share one schema: guardrail/webhook errors use
+  `data.where`/`data.message`, but app-backend's token_exchange/setup/
+  sync errors use `data.step`/`data.error` (or just a status code)
+  instead — there was never one shared error-event shape across the
+  three Workers. `normalizeErrorKey()` reconciles this (falls back
+  `where`→`step`→the event's own `type`, `message`→`error`→a
+  formatted status) rather than grouping everything that isn't
+  guardrail/webhook-shaped into one undefined/undefined bucket. Also
+  the `/actions/prune-events` action.
+- **KV inspector** — two independent GET-driven lookups (variant →
+  bitmap entry via `toVariantGid`/`bitmapKey`, inventory item →
+  mapped variant via `inventoryItemMapKey`), reusing the exact key
+  helpers the Guardrail Worker and webhook consumer use to write them.
+- **Guardrail tester** — calls the live, public Guardrail Worker's
+  `/check` (exercising the real deployed compatibility logic and
+  current per-shop config) and separately checks `LOCATION_BITMAP`
+  directly for each pasted variant, since `/check`'s response never
+  says which specific variants it had no data for (only an aggregate
+  count goes into the guardrail's own recorded event) — the two
+  results are shown together.
+- **Actions** — each rendered as a form with an in-page two-step
+  confirm (`data-confirm-trigger` → reveals `data-confirm-inline`'s
+  real Confirm/Cancel buttons), never `window.confirm`, per the plan.
+  "Force token re-exchange" is implemented as clearing `setupAt` only,
+  matching the plan's own parenthetical — the operator has no
+  `id_token` to actually call Shopify's OAuth endpoint from here, so
+  the real effect is "the next natural app-backend page load redoes
+  its own setup/exchange checks," not an immediate re-exchange; noted
+  directly in the code so the name doesn't overstate what it does.
+
+49 new tests (15 `queries.ts`, 10 `actions.ts` — including the real
+`ensureStoreSetup`/`runSync` cross-imports exercised end to end via
+mocked fetch, 5 `kv-inspector.ts`, 4 `guardrail-tester.ts`, 13
+`views.ts` HTML smoke tests including one confirming a shop domain
+containing a `<script>` tag can't break out of its table cell, plus 2
+for `console.js`'s syntax/DOM-guard — and `index.test.ts`'s existing
+suite updated for the new `ctx` parameter and real `/` rendering).
+269 tests across all four Worker packages (root 65, webhook-consumer
+19, app-backend 115, ops-console 70), typecheck clean everywhere.
+
+Same limitation as T11/T12: the plan's own accept criteria
+("each view renders against real D1 data from box-craft-demo") needs
+a real deploy with D1 actually provisioned — this sandbox has neither.
+Structurally exercised through the mocked-D1/KV test suite instead;
+real-data verification is one more item for the human checkpoints.
+
 ## Where things stand now (updated 2026-09-23, end of day)
 
 ### Done and verified on the dev store (`box-craft-demo`)

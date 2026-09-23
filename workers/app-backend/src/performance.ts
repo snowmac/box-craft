@@ -3,6 +3,10 @@
 // unit-testable; loadPerformanceMetrics is the thin D1-reading wrapper.
 import type { D1Like } from "../../../shared/events.ts";
 
+// Constrains the merchant admin page's own toggle (api.ts's route
+// validation) to these two. computePerformanceMetrics/loadPerformanceMetrics
+// below take a plain number so other callers (T14's ops console, a 1-day
+// window for its Overview) aren't artificially restricted to the same set.
 export type PerformanceWindow = 7 | 30;
 
 export interface PerformanceSeries {
@@ -12,7 +16,7 @@ export interface PerformanceSeries {
 }
 
 export interface PerformanceMetrics {
-	windowDays: PerformanceWindow;
+	windowDays: number;
 	bundlesAdded: number;
 	bundlesSold: number;
 	revenueCents: number;
@@ -50,7 +54,7 @@ function parseData(raw: string | null): Record<string, unknown> {
 
 export function computePerformanceMetrics(
 	events: EventRow[],
-	windowDays: PerformanceWindow,
+	windowDays: number,
 	now: number,
 ): PerformanceMetrics {
 	const windowStart = now - windowDays * MS_PER_DAY;
@@ -111,7 +115,7 @@ export function computePerformanceMetrics(
 export async function loadPerformanceMetrics(
 	db: D1Like,
 	shop: string,
-	windowDays: PerformanceWindow,
+	windowDays: number,
 	now: number = Date.now(),
 ): Promise<PerformanceMetrics> {
 	const windowStart = now - windowDays * MS_PER_DAY;
