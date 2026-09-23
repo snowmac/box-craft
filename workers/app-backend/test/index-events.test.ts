@@ -116,7 +116,8 @@ test("GET / with a valid id_token and an already-installed, already-set-up store
 	await flush(ctx);
 	const html = await response.text();
 
-	assert.match(html, /BoxCraft is installed/);
+	assert.match(html, /data-card="setup"/);
+	assert.doesNotMatch(html, /setup didn't finish/);
 	// Already set up (setupAt present) -> ensureStoreSetup never called, no new events.
 	assert.equal(inserts.length, 0);
 });

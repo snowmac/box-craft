@@ -711,6 +711,62 @@ Customer Data approval for an eventual App Store release. Not an issue
 on a dev store; carrying this forward to T15's `assumptions.md` update
 rather than duplicating it here.
 
+## 2026-09-23 — Admin/ops plan, Phase 3: merchant admin page
+
+**T11 done — Admin page shell + styles.** Replaced the one-paragraph
+embedded shell (`handleEmbeddedShell`, from the original OAuth work)
+with a real page shell, still plain HTML/CSS/JS per the plan's ground
+rules — no React, no build step.
+
+`src/admin/page.ts`: `renderAdminPage({clientId, installed})` — a pure
+function returning the full HTML string, easy to unit-test without a
+DOM. Header ("BoxCraft"), a setup-failed banner with a Retry button
+(shown only when `installed` is false — same condition the old shell's
+two-message branch used, now a proper element instead of swapped
+text), and five empty card shells (`data-card="setup"`,
+`"performance"`, `"boxes"`, `"guardrail"`, `"sync"`) each holding a
+"Loading…" placeholder body for T12 to fill in. App Bridge's CDN
+script and the `shopify-api-key` meta tag carry over unchanged from
+the old shell — still the only third-party script per the ground
+rules.
+
+`src/admin/admin.css.ts` / `admin.js.ts`: kept as exported template
+strings (like `page.ts`'s HTML) rather than literal `.css`/`.js`
+files, specifically so they load identically under both Node's test
+runner and wrangler's bundler with no module-rule configuration —
+`wrangler.toml`'s `[[rules]]` text-import mechanism would work for
+wrangler but silently break `node --experimental-strip-types --test`
+trying to parse CSS as JS. Served by two new routes,
+`GET /admin.css` / `GET /admin.js`, both with
+`Cache-Control: public, max-age=31536000, immutable`; the HTML
+references them with a `?v=${ADMIN_ASSET_VERSION}` query string (a
+manually bumped constant, not a content hash — no build step to
+compute one) so a future asset change invalidates the long cache by
+changing the URL rather than needing a shorter max-age.
+
+CSS: system font stack, 16px card radius, subtle borders, admin-like
+greys, a 2-column card grid collapsing to 1 column under 768px, and a
+`prefers-color-scheme: dark` variant (swapped CSS custom properties
+only — trivial, per the plan's own "only if trivial" scoping). Under
+2.1 KB.
+
+12 new tests (5 for `renderAdminPage` — all five cards present, the
+banner's presence/absence tracking `installed`, the App Bridge
+script/meta tag, the versioned asset URLs; 2 for the `/admin.css` and
+`/admin.js` routes' content-type and cache headers; the rest from
+updating the pre-existing "already installed" test, which asserted on
+now-gone literal text, to check for `data-card="setup"` and the
+banner's absence instead). 178 tests across the three Worker packages
+(root 65, webhook-consumer 19, app-backend 94), typecheck clean
+everywhere.
+
+Not verified in this sandbox (no way to load a real embedded app
+iframe here): that the page actually renders correctly inside
+Shopify's admin iframe. T12's accept criteria already calls for that
+check on `box-craft-demo` once the cards have real content — deferring
+the visual check to then rather than checking an intentionally
+placeholder-only shell twice.
+
 ## Where things stand now (updated 2026-09-23, end of day)
 
 ### Done and verified on the dev store (`box-craft-demo`)

@@ -17,6 +17,9 @@ import { adminClient } from "./admin-client.ts";
 import { seedDefaultBoxIfNone } from "./db.ts";
 import { handleApi, type ApiEnv } from "./api.ts";
 import { runSync } from "./sync.ts";
+import { renderAdminPage } from "./admin/page.ts";
+import { ADMIN_CSS } from "./admin/admin.css.ts";
+import { ADMIN_JS } from "./admin/admin.js.ts";
 
 export interface Env {
 	SHOP_TOKENS: KVNamespace;
@@ -68,7 +71,22 @@ export default {
 		}
 
 		if (url.pathname === "/" && request.method === "GET") {
-			return handleEmbeddedShell(url, env, ctx);
+			return handleAdminPage(url, env, ctx);
+		}
+
+		if (url.pathname === "/admin.css" && request.method === "GET") {
+			return new Response(ADMIN_CSS, {
+				headers: { "Content-Type": "text/css; charset=utf-8", "Cache-Control": "public, max-age=31536000, immutable" },
+			});
+		}
+
+		if (url.pathname === "/admin.js" && request.method === "GET") {
+			return new Response(ADMIN_JS, {
+				headers: {
+					"Content-Type": "application/javascript; charset=utf-8",
+					"Cache-Control": "public, max-age=31536000, immutable",
+				},
+			});
 		}
 
 		if (url.pathname.startsWith("/api/")) {
@@ -219,32 +237,14 @@ async function handleUninstalled(request: Request, env: Env): Promise<Response> 
 	return new Response("ok", { status: 200 });
 }
 
-async function handleEmbeddedShell(url: URL, env: Env, ctx: EventContext): Promise<Response> {
+async function handleAdminPage(url: URL, env: Env, ctx: EventContext): Promise<Response> {
 	// Managed installation (scopes in shopify.app.toml) never calls /auth:
 	// Shopify loads this page with a signed id_token instead, and the app is
 	// expected to trade it for an access token. Do that the first time we
 	// see a shop.
 	const installed = await ensureShopReady(url.searchParams.get("id_token"), env, ctx);
 
-	// Minimal shell: no merchant config here for v1 — the Pick-N picker's
-	// settings live in the theme editor, and guardrail rules are
-	// feature-gated by tier rather than configured per-store (see the
-	// Pricing plan). This just confirms the install succeeded.
-	const message = installed
-		? "<h1>BoxCraft is installed</h1>\n  <p>Add the Pick-N Picker block to a product page from the theme editor to get started.</p>"
-		: "<h1>BoxCraft setup didn't finish</h1>\n  <p>Reload this page to try again. If it keeps happening, reinstall the app.</p>";
-	const html = `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <title>BoxCraft</title>
-  <script src="https://cdn.shopify.com/shopifycloud/app-bridge.js"></script>
-  <meta name="shopify-api-key" content="${env.SHOPIFY_CLIENT_ID}">
-</head>
-<body>
-  ${message}
-</body>
-</html>`;
+	const html = renderAdminPage({ clientId: env.SHOPIFY_CLIENT_ID, installed });
 
 	return new Response(html, {
 		headers: { "Content-Type": "text/html; charset=utf-8" },
