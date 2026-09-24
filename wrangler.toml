@@ -9,12 +9,9 @@ enabled = true
 binding = "LOCATION_BITMAP"
 id = "fd681a5957544826b82e98f16df52950"
 
-# Events database, shared across Workers. Not yet provisioned in this
-# environment — create with `npx wrangler d1 create boxcraft` (or via
-# scripts/setup-cloudflare.mjs) and fill in database_id, or add the
-# binding via the Cloudflare dashboard. See specs/product/assumptions.md.
-# [[d1_databases]]
-# binding = "DB"
-# database_name = "boxcraft"
-# database_id = ""
-# migrations_dir = "db/migrations"
+# Events database, shared across Workers.
+[[d1_databases]]
+binding = "DB"
+database_name = "boxcraft"
+database_id = "064bd58d-0d20-42a0-af37-9e6d324708b2"
+migrations_dir = "db/migrations"

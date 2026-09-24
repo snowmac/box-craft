@@ -26,8 +26,8 @@ id = "fd681a5957544826b82e98f16df52950"
 # credentials — not yet available in this environment.)
 
 # Same D1 database as the Guardrail Worker's DB binding (see
-# ../../wrangler.toml) — not yet provisioned.
-# [[d1_databases]]
-# binding = "DB"
-# database_name = "boxcraft"
-# database_id = ""
+# ../../wrangler.toml).
+[[d1_databases]]
+binding = "DB"
+database_name = "boxcraft"
+database_id = "064bd58d-0d20-42a0-af37-9e6d324708b2"
