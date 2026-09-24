@@ -1209,6 +1209,72 @@ is requested and approved in the Partner Dashboard.
 Redeployed successfully as **`boxcraft-bundles-7`**: picker box-handle
 support and CSS fixes (T7), server-side Cart Transform pricing — the
 `_bundle_price` trust fix (T8) — and the trimmed webhook/scope set are
-now registered with Shopify. Not yet done: install/update the app on
-`box-craft-demo` to pick up the new scopes, set the Pick-N block's Box
-handle in the theme editor, and the remaining human checkpoints below.
+now registered with Shopify.
+
+### D1 provisioned; admin page went from stuck to fully live
+
+@adam.bourg reloaded the embedded app after the deploy: it re-exchanged
+its (now smaller) token scope, but the admin page showed a persistent
+"BoxCraft setup didn't finish" banner and the Performance/Boxes/Location
+guardrail cards never left "Loading..." — verified directly via the
+connected Chrome extension. Root cause, found by reading
+`ensureShopReady` in `workers/app-backend/src/index.ts`: it now calls
+`seedDefaultBoxIfNone`/`runSync`, both needing `env.DB`, but D1 had
+never actually been provisioned — all four `wrangler.toml`s still had
+their `[[d1_databases]]` block commented out ("not yet provisioned").
+The throw was caught, `ensureShopReady` returned `false`, and every
+reload repeated the same failing step (the three checklist items that
+ran before the DB call — token, bundle product, Cart Transform — kept
+showing ✓, which is why the checklist looked mostly fine).
+
+@adam.bourg ran `npx wrangler d1 create boxcraft` (region WNAM,
+`database_id: 064bd58d-0d20-42a0-af37-9e6d324708b2`) and applied
+`db/migrations/0001_init.sql --remote`. Wired the real id into all four
+`wrangler.toml`s (`915d31e`) — deployed via Workers Builds (root) and
+GitHub Actions (the other three, `ops-console` included, confirmed
+already wired into `deploy-workers.yml`). Reloading the admin page
+afterward showed everything working: Setup checklist fully green
+(including a real inventory-sync timestamp), Performance metrics at
+zero (no live traffic yet), the seeded `default` box, and Location
+guardrail settings — verified live via Chrome.
+
+### Ops console verified live; a real production bug found and fixed
+
+@adam.bourg set the ops console's secrets (`OPS_TOKEN` generated and
+stored in the keychain per the plan, `SHOPIFY_CLIENT_SECRET` from the
+Partner Dashboard's Dev Dashboard) and logged in at
+`box-craft-ops.adam-bourg.workers.dev`. The Overview page loaded real
+data — `box-craft-demo` installed, setup `done`, correct trimmed
+scopes — but flagged two problems the console was built to catch:
+**Worker health showed all three Workers "down"**, and the day's first
+sync showed **"Last sync: ... (error)"**.
+
+Direct `curl` to all three `/health` endpoints returned 200, so the
+Workers themselves were fine — the console's own health check was
+lying. The Errors page (a live feature working exactly as designed)
+showed why: `Illegal invocation: function called with incorrect 'this'
+reference` from `sync`. Root cause, found in
+`workers/app-backend/src/sync.ts` and
+`workers/ops-console/src/queries.ts`: both default their injectable
+`fetchImpl` parameter to the bare `fetch` global
+(`fetchImpl: FetchLike = fetch`) — workerd's `fetch` needs its receiver
+bound to `globalThis`, so calling through the detached reference throws
+on first use. `checkWorkerHealth` swallowed the error into `false`
+("down"); `runSync` surfaced it as a real sync failure. Node's `fetch`
+has no such requirement, so the existing tests — which always inject a
+mock `fetchImpl` — never exercised the real default and never caught
+it. Fixed both defaults to `fetch.bind(globalThis)` (`f15b03c`).
+Verified live after redeploy: sync now completes "ok (27 variants)".
+
+### Where this leaves things
+
+Live and verified on `box-craft-demo`: D1-backed admin page (all
+cards), inventory sync, ops console (Overview, Errors at minimum).
+@adam.bourg also set the Pick-N block's Box handle to `default` in the
+theme editor.
+
+Still open, none urgent:
+- Optional Cloudflare Access hardening on the ops console's
+  workers.dev URL.
+- Protected Customer Data approval in the Partner Dashboard, to
+  re-enable the `orders/paid` webhook and bundle-sold metrics.
