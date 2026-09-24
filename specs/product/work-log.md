@@ -1187,3 +1187,28 @@ section day to day, confirm at least once: the console URL loads and
 accepts the real `OPS_TOKEN`, the Overview page shows `box-craft-demo`
 with real data, and each action produces the effect described above
 against that store.
+
+## 2026-09-24 — `admin-and-ops-plan.md` deployed: `boxcraft-bundles-7`
+
+All 15 tasks (T1–T15) were already committed to `main` going into this
+session — verified directly (`git log origin/main`, 296 tests passing
+across every package) rather than re-executed.
+
+First `shopify app deploy --allow-updates` from `shopify-app/` failed:
+"This app is not approved to subscribe to webhook topics containing
+protected customer data." T10's assumption that dev stores skip
+Protected Customer Data approval (recorded in `assumptions.md`) was
+wrong — Shopify's CLI enforces PCD approval before it will even
+register an `orders/paid` subscription, regardless of store type.
+Commented out the `orders/paid` webhook subscription and the
+`read_orders` scope in `shopify.app.toml` and app-backend's
+`SHOPIFY_SCOPES` (`4384cc0`) so the rest of the release could ship;
+`bundle_sold` tracking code stays in the repo, dormant until PCD access
+is requested and approved in the Partner Dashboard.
+
+Redeployed successfully as **`boxcraft-bundles-7`**: picker box-handle
+support and CSS fixes (T7), server-side Cart Transform pricing — the
+`_bundle_price` trust fix (T8) — and the trimmed webhook/scope set are
+now registered with Shopify. Not yet done: install/update the app on
+`box-craft-demo` to pick up the new scopes, set the Pick-N block's Box
+handle in the theme editor, and the remaining human checkpoints below.
