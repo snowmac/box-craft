@@ -74,7 +74,13 @@ export async function loadOverviewShops(env: { DB: D1Like; SHOP_TOKENS: KVNamesp
 	);
 }
 
-export async function checkWorkerHealth(url: string, fetchImpl: typeof fetch = fetch): Promise<boolean> {
+// Default bound to globalThis: the bare `fetch` reference loses the
+// receiver workerd's fetch needs, throwing "Illegal invocation" on every
+// call — silently caught below as `false` ("down"), which is why the
+// Overview page reported every Worker down despite all three answering
+// curl fine (found live, 2026-09-24; see sync.ts's runSync for the same
+// bug and why node's tests never catch it).
+export async function checkWorkerHealth(url: string, fetchImpl: typeof fetch = fetch.bind(globalThis)): Promise<boolean> {
 	try {
 		const res = await fetchImpl(`${url.replace(/\/$/, "")}/health`, { signal: AbortSignal.timeout(3000) });
 		return res.ok;

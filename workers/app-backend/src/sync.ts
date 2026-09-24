@@ -111,8 +111,13 @@ export async function runSync(
 	trigger: SyncTrigger,
 	// Injectable for deterministic tests (the 10-minute concurrent-run
 	// window, batching over real fetch); default to the real clock/fetch.
+	// Bound to globalThis: passing the bare `fetch` reference loses the
+	// receiver workerd's fetch needs and throws "Illegal invocation" the
+	// first time it's actually called (found live via the ops console's
+	// sync error, 2026-09-24 — node's fetch doesn't have this failure
+	// mode, so the existing mocked-fetchImpl tests never caught it).
 	now: () => number = Date.now,
-	fetchImpl: FetchLike = fetch,
+	fetchImpl: FetchLike = fetch.bind(globalThis),
 ): Promise<SyncResult> {
 	const startedAt = now();
 
