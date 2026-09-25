@@ -1298,3 +1298,81 @@ Still open, none urgent:
   workers.dev URL.
 - Protected Customer Data approval in the Partner Dashboard, to
   re-enable the `orders/paid` webhook and bundle-sold metrics.
+
+## 2026-09-25 — Cloud portability refactor (`portability-plan.md`)
+
+Insurance, not a migration: closed the two real portability gaps left
+after `D1Like` (KV had no interface; the Durable Object debouncer had no
+interface at all) and wrote the informal pattern down as an explicit
+rule. No `wrangler.toml` changes anywhere — every task relies on
+TypeScript structural typing, which the plan called zero deploy risk,
+and that held.
+
+**T1 done — `KVLike` + retype every consumer.** New `shared/kv.ts`
+mirrors `shared/d1.ts`'s `D1Like` pattern: `get`/`get<T>(key, "json")`/
+`put`/`delete`/`list`, nothing more. Retyped every KV parameter across
+`workers/app-backend` (`sync.ts`'s `writeBitmapEntries`/`SyncEnv`,
+`api.ts`'s `ApiEnv`), `workers/ops-console` (`queries.ts`,
+`actions.ts`, `guardrail-tester.ts`, `kv-inspector.ts`), and
+`workers/webhook-consumer/src/debouncer.ts`'s `DebouncerEnv` — every
+one of these was already a downstream function parameter, not a
+Worker's own top-level `Env`, so none of them needed to keep naming
+Cloudflare's `KVNamespace` directly. Left `KVNamespace` in exactly the
+three places it should stay: each Worker's own top-level `Env`
+interface (`app-backend/src/index.ts`, `ops-console/src/index.ts`,
+root `src/index.ts`) — confirmed by `grep -rn "KVNamespace"` returning
+matches only there. Test mocks that cast `as unknown as KVNamespace`
+updated to `KVLike` too, closing the boundary all the way down. New
+`test/kv.test.ts`: a plain in-memory `Map`-backed mock with no
+Cloudflare types anywhere in the file, proving the interface is
+complete and minimal. Behavior-preserving as the plan required:
+app-backend/webhook-consumer/ops-console test counts unchanged (115,
+19, 70), root went 65→70 (the new mock test only), typecheck clean in
+all 6 packages.
+
+**T2 done — `Debouncer` interface around the Durable Object.** New
+`shared/debounce.ts`: `Debouncer.schedule(skuKey, update)` captures
+the actual contract ("collapse a burst of per-key updates into one
+write after a quiet window"), not the Durable Object's shape.
+`workers/webhook-consumer/src/debouncer-adapter.ts` is now the one
+file that reaches into `env.SKU_DEBOUNCER`; `handleWebhook` calls
+`debouncer.schedule()` instead of touching the namespace binding
+directly. `SkuDebouncer` itself (the actual Durable Object class) is
+untouched — it's the interface's one Cloudflare-specific
+implementation, exactly as the plan intended; this is the one
+genuinely non-portable primitive in the codebase (actor model +
+alarms have no equivalent elsewhere), so the goal was making sure only
+this one adapter file would need rewriting on a real migration, not
+every caller. `grep -rn "SKU_DEBOUNCER" workers/webhook-consumer/src`
+confirms it now appears only in the `Env` interface declaration and
+the adapter file. Existing webhook tests unchanged and green (they
+already exercised the adapter path end-to-end through
+`handleWebhook`); added one direct test for the adapter itself. 20
+tests in webhook-consumer (was 19), typecheck clean.
+
+**T3 done — `CLAUDE.md`.** Repo root had none before this. Added a
+"Portability" section writing down the rule T1/T2 established as
+pattern: `shared/` never imports a Cloudflare-specific ambient type
+directly (`KVNamespace`, `D1Database`, `DurableObject`,
+`DurableObjectState`, `ExecutionContext`) — only the narrow `*Like`
+interfaces are allowed past that boundary; a Worker's own top-level
+`Env` is the only place a real binding type gets named; a new external
+dependency gets a narrow interface in `shared/` before any code calls
+it, not the vendor SDK type "just this once."
+
+**T4 done — migration cost map.** New
+`specs/product/portability-notes.md`: a plain table of what's portable
+today (business logic, D1, KV, `ctx.waitUntil`, secrets, Cron
+Triggers — all "yes, nothing or one adapter class") versus real work
+(the Durable Object debounce — a couple of days, the one real
+rewrite; the `fetch(request, env, ctx)` handler shell — no code
+depends on it today but moving off it isn't free; deploy/ops — global
+edge and DDoS protection Cloudflare gives away today would need to be
+owned). Same conclusion as the plan's own framing: insurance, not a
+roadmap item, not worth doing proactively at current scale.
+
+**T5 (this entry).** 275 tests across the four Worker packages (root
+70, webhook-consumer 20, app-backend 115, ops-console 70) plus the
+picker and Cart Transform suites, typecheck clean everywhere, no
+`wrangler.toml` changes, nothing redeployed differently — a pure
+type-level refactor as scoped.
