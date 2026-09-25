@@ -1,49 +1,32 @@
 import type { D1Like } from "../../../shared/events.ts";
-import type { Box, Discount } from "../../../shared/boxes.ts";
-import { defaultBox } from "../../../shared/boxes.ts";
+import type { Box, BoxRow } from "../../../shared/boxes.ts";
+import { defaultBox, normalizeBox } from "../../../shared/boxes.ts";
 
 // Shared with the Guardrail Worker (T6), which reads the same shop_config
 // table to decide whether it's on and which unknown-stock policy applies.
 export { getShopConfig, upsertShopConfig, type ShopConfig } from "../../../shared/shop-config.ts";
 
-interface BoxRow {
-	handle: string;
-	title: string;
-	collection_handle: string | null;
-	pick_count: number;
-	discount: string;
-	active: number;
-}
-
-function rowToBox(row: BoxRow): Box {
-	return {
-		handle: row.handle,
-		title: row.title,
-		collection_handle: row.collection_handle,
-		pick_count: row.pick_count,
-		discount: JSON.parse(row.discount) as Discount,
-		active: row.active !== 0,
-	};
-}
-
 export async function listBoxes(db: D1Like, shop: string): Promise<Box[]> {
 	const { results } = await db
-		.prepare("SELECT handle, title, collection_handle, pick_count, discount, active FROM boxes WHERE shop = ? ORDER BY handle")
+		.prepare(
+			"SELECT handle, title, collection_handle, pick_count, discount, pools, active FROM boxes WHERE shop = ? ORDER BY handle",
+		)
 		.bind(shop)
 		.all<BoxRow>();
-	return results.map(rowToBox);
+	return results.map(normalizeBox);
 }
 
 export async function upsertBox(db: D1Like, shop: string, box: Box): Promise<void> {
 	await db
 		.prepare(
-			`INSERT INTO boxes (shop, handle, title, collection_handle, pick_count, discount, active, updated_at)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+			`INSERT INTO boxes (shop, handle, title, collection_handle, pick_count, discount, pools, active, updated_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 			 ON CONFLICT(shop, handle) DO UPDATE SET
 			   title = excluded.title,
 			   collection_handle = excluded.collection_handle,
 			   pick_count = excluded.pick_count,
 			   discount = excluded.discount,
+			   pools = excluded.pools,
 			   active = excluded.active,
 			   updated_at = excluded.updated_at`,
 		)
@@ -54,6 +37,7 @@ export async function upsertBox(db: D1Like, shop: string, box: Box): Promise<voi
 			box.collection_handle,
 			box.pick_count,
 			JSON.stringify(box.discount),
+			JSON.stringify(box.pools),
 			box.active ? 1 : 0,
 			Date.now(),
 		)

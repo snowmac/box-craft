@@ -1,6 +1,6 @@
 // Pure validation for the boxes/config API (T5). Kept independent of the
 // Worker runtime so it's directly unit-testable.
-import type { Box, Discount } from "../../../shared/boxes.ts";
+import type { Box, Discount, Pool } from "../../../shared/boxes.ts";
 
 const HANDLE_PATTERN = /^[a-z0-9-]{1,40}$/;
 const MAX_PERCENT = 90;
@@ -76,14 +76,24 @@ export function validateBoxInput(input: unknown): ValidationResult {
 	return { valid: errors.length === 0, errors };
 }
 
+// Multi-pool boxes (T2 adds real pools validation/capping): until then,
+// an input carrying a real `pools` array passes through untouched, and
+// anything else synthesizes the same single-pool shape normalizeBox
+// would for a legacy row — one box submitted through the current
+// collection_handle/pick_count fields still round-trips exactly as it
+// did before pools existed.
 export function toBox(input: Record<string, unknown>): Box {
+	const collection_handle = (input.collection_handle as string | null) ?? null;
+	const pick_count = input.pick_count as number;
+	const pools = Array.isArray(input.pools) ? (input.pools as Pool[]) : [{ collection_handle, count: pick_count }];
 	return {
 		handle: input.handle as string,
 		title: input.title as string,
-		collection_handle: (input.collection_handle as string | null) ?? null,
-		pick_count: input.pick_count as number,
+		collection_handle,
+		pick_count,
 		discount: input.discount as Discount,
 		active: input.active !== false,
+		pools,
 	};
 }
 

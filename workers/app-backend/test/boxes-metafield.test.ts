@@ -11,6 +11,7 @@ const BOX: Box = {
 	pick_count: 4,
 	discount: { type: "none" },
 	active: true,
+	pools: [{ collection_handle: null, count: 4 }],
 };
 
 function recordingAdmin(responses: Record<string, unknown>): { admin: AdminClient; calls: Array<{ query: string; variables?: Record<string, unknown> }> } {

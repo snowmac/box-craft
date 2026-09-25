@@ -57,7 +57,7 @@ test("renderStoreDetailBody includes the three action forms and never shows a ra
 		shop: "box-craft-demo.myshopify.com",
 		scope: "read_inventory",
 		config: { guardrailEnabled: true, unknownStockPolicy: "allow" },
-		boxes: [{ handle: "default", title: "Build your box", collection_handle: null, pick_count: 4, discount: { type: "none" }, active: true }],
+		boxes: [{ handle: "default", title: "Build your box", collection_handle: null, pick_count: 4, discount: { type: "none" }, active: true, pools: [{ collection_handle: null, count: 4 }] }],
 		events: [{ id: 1, ts: 1000, shop: "box-craft-demo.myshopify.com", source: "guardrail", type: "check", level: "info", data: null }],
 		syncHistory: [{ id: 1, trigger: "manual", started_at: 1000, finished_at: 2000, variants: 26, status: "ok", error: null }],
 		bundleProductPublished: true,

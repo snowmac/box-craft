@@ -28,7 +28,7 @@ function fakeD1(): D1Like {
 								const [shop, guardrail_enabled, unknown_stock_policy] = args as [string, number, string];
 								shopConfig.set(shop, { guardrail_enabled, unknown_stock_policy });
 							} else if (query.includes("INSERT INTO boxes")) {
-								const [shop, handle, title, collection_handle, pick_count, discount, active] = args;
+								const [shop, handle, title, collection_handle, pick_count, discount, pools, active] = args;
 								boxes.set(`${shop}\u0000${handle}`, {
 									shop,
 									handle,
@@ -36,6 +36,7 @@ function fakeD1(): D1Like {
 									collection_handle,
 									pick_count,
 									discount,
+									pools,
 									active,
 								});
 							} else if (query.includes("DELETE FROM boxes")) {
@@ -95,6 +96,7 @@ function makeBox(overrides: Partial<Box> = {}): Box {
 		pick_count: 4,
 		discount: { type: "none" },
 		active: true,
+		pools: [{ collection_handle: null, count: 4 }],
 		...overrides,
 	};
 }
