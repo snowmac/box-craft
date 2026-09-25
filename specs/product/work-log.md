@@ -1048,19 +1048,18 @@ backfill into the Worker. Human steps are batched at its end.
   `block` option in the guardrail card.
 - ~~**Bundle parent's direct URL** (`/products/boxcraft-bundle`) is
   reachable; a shopper could buy the $0 parent alone. Guard it or
-  accept?~~ **Resolved 2026-09-25: guard it.** Approach: set the parent
-  variant's inventory to tracked (`inventoryManagement: "SHOPIFY"`),
-  quantity 0, `inventoryPolicy: "DENY"` in `ensureBundleProduct`
-  (`workers/app-backend/src/store-setup.ts`) so the storefront "Add to
-  cart" on the direct product page is disabled/out of stock. **Not yet
-  implemented** — needs one thing confirmed first, since it's a live
-  Admin API mutation against a real store: verify Shopify's Cart
-  Transform deducts inventory from the *component* variants at checkout,
-  not the merged parent line, before making this change — otherwise
-  zeroing the parent's own inventory could break real bundle checkouts
-  instead of only blocking the standalone purchase. Check
-  shopify.dev's Cart Transform + inventory docs, or test directly on
-  `box-craft-demo`, before writing this.
+  accept?~~ **Resolved and implemented 2026-09-25: guard it.**
+  Confirmed (schema-structure inference + this repo's own prior live
+  checkout — shopify.dev itself was unreachable from this sandbox, see
+  the "$0 direct-URL exposure" entry above for the full reasoning)
+  that `linesMerge` deducts inventory from the real merged component
+  variants, not `parentVariantId`. `ensureStoreSetup` now sets the
+  bundle parent variant's inventory to tracked + `inventoryPolicy:
+  DENY` via `ensureInventoryGuarded()`
+  (`workers/app-backend/src/store-setup.ts`), idempotent and
+  self-healing for stores that installed before this fix. New
+  `write_inventory` scope. A real confirming order on `box-craft-demo`
+  is still a human checkpoint (below).
 - ~~**Bundle discount:** `_bundle_price` is the plain sum, so bundles sell
   at list. What discount model (per tier/setting)?~~ **Resolved (D10,
   T5/T8):** per-box `none`/`percent`/`tiered` discount, merchant-editable
@@ -1517,3 +1516,105 @@ plan's own human checkpoints (below) cover exactly this.
 4. **Theme editor**: if this box uses a different handle than
    `default`, set the Pick-N block's Box handle setting to match, same
    as before.
+
+## 2026-09-25 — Bundle parent's $0 direct-URL exposure: investigated and fixed
+
+Picked up the open item from "Left to do" above: does Cart Transform's
+`linesMerge` deduct inventory from the merged component variants at
+checkout, or from `parentVariantId`'s own inventory? This needed
+answering before zeroing the "BoxCraft Bundle" placeholder product's
+own stock — if the parent's own inventory is what a real bundle
+checkout draws down, zeroing it would break every bundle purchase, not
+just block the standalone one.
+
+**Couldn't test directly** — no live `box-craft-demo` access in this
+sandbox. **Couldn't read shopify.dev directly either** — `shopify.dev`,
+`community.shopify.dev`, and most third-party technical blogs
+(`instasupport.io`, `supaeasy.com`, `medium.com`, `simplebundles.com`)
+are all blocked by this session's network egress policy (same
+`cdn.shopify.com` restriction noted back in T8). Answered instead from
+two sources that were reachable:
+
+1. **The Cart Transform Function API's own GraphQL schema**, already
+   vendored into this repo at
+   `shopify-app/extensions/cart-transform/schema.graphql` (shipped by
+   `@shopify/shopify_function`, not fetched over the network).
+   `LinesMergeOperation.cartLines` is typed `[CartLineInput!]!`, and
+   `CartLineInput` carries only `cartLineId` and `quantity` — no
+   `merchandiseId` of its own. Contrast `LineExpandOperation
+   .expandedCartItems: [ExpandedItem!]`, where each `ExpandedItem`
+   *does* carry its own `merchandiseId` — that's the field Shopify
+   gives an `expand` operation specifically so each expanded component
+   becomes its own real, separately-inventoried line. `merge` has no
+   equivalent field: it only consumes existing cart line IDs and
+   presents them as one line fronted by `parentVariantId` ("the
+   product variant that **represents** the collection of cart line
+   items" — representative/display language, not "replaces"). A
+   mutation whose own input shape has nowhere to carry a substitute
+   variant per component isn't substituting the components for
+   anything at the data level.
+2. **This repo's own prior live-verified checkout**, from the "First
+   end-to-end bundle merge" entry above (2026-09-23, real box-craft-
+   demo checkout): "one 'BoxCraft Bundle' line at $2,779.85 with the 4
+   boards as components." Checkout displaying the real boards as
+   components *underneath* the merged line — rather than one opaque
+   parent-only line — is consistent with the components remaining the
+   real, individually-tracked purchased entities, matching Shopify's
+   general Bundles inventory model (independently corroborated by
+   unprompted web search results: "Shopify decrements inventory
+   against component variants, not a synthetic bundle SKU").
+
+Both sources converge on **components are deducted, not the parent**
+— confident enough to implement the scoped fix, but this is schema-
+structure inference plus a prior observation, not a literal quote from
+Shopify's own docs (blocked) or a fresh live order (no store access).
+Worth a real confirming order on `box-craft-demo` before or shortly
+after this next ships; flagged below with the other human checkpoints.
+
+**Fix implemented**, per the plan already scoped in "Left to do":
+`workers/app-backend/src/store-setup.ts` gained `ensureInventoryGuarded
+(admin, productId, variantId)`, called from `ensureStoreSetup` right
+after `ensurePublishedToOnlineStore`. Reads the bundle parent variant's
+current `inventoryPolicy`/`inventoryItem.tracked`; if not already
+`DENY`/tracked, sets both via `productVariantsBulkUpdate`
+(`inventoryItem: { tracked: true }`, `inventoryPolicy: DENY`) — an
+untracked-then-tracked variant defaults to zero inventory at every
+location, so no separate `inventorySetQuantities` call (and the
+location-id lookup it would need) was necessary to reach "0 qty,
+deny-oversell." Idempotent like every other step in `ensureStoreSetup`:
+a no-op once already guarded, so this self-heals for any store whose
+bundle product predates the fix on its next natural setup run, no
+separate migration needed. New scope `write_inventory`, added to both
+`shopify.app.toml` and app-backend's `SHOPIFY_SCOPES` (kept in sync,
+per that pair's existing convention) — `productVariantsBulkUpdate`'s
+`inventoryItem` field needs it beyond what `write_products` alone
+covers.
+
+6 new/updated tests in `store-setup.test.ts`: a fresh store's newly
+created variant gets tracked + `DENY` set (asserting the exact
+mutation variables, not just that *a* call happened); a pre-fix store
+whose variant is still untracked/`CONTINUE` gets it set on its next
+setup run; an already-guarded variant triggers no mutation call
+(idempotent); the existing "only reads, makes no changes" test updated
+to include the new read call pre-seeded as already-guarded. Also fixed
+`workers/ops-console/test/actions.test.ts`'s `rerunStoreSetup` success
+test, which mocks `fetch` with one static response object covering
+every query `ensureStoreSetup` makes (not name-routed like
+`store-setup.test.ts`'s own mock) — it had no `productVariant` key at
+all, so the new read call resolved `undefined` and the whole
+`rerunStoreSetup` call failed silently into `{ok: false}` until the
+mock response gained one. 129 tests in app-backend (was 127), 70 in
+ops-console (unchanged, net of the one fix), typecheck clean, all 6
+packages green.
+
+### One more human checkpoint
+
+5. **A real test order on `box-craft-demo`** confirming this fix in
+   practice: after deploy, try loading `/products/boxcraft-bundle`
+   directly and confirm "Add to cart"/"Buy now" is disabled as out of
+   stock, *and* place one real bundle order through the normal picker
+   flow and confirm it still checks out and decrements the real
+   component variants' stock, not the bundle parent's. Belt-and-
+   suspenders on top of the schema-based confidence above, given this
+   was verified via documentation structure rather than a literal
+   Shopify docs quote or a fresh live order.

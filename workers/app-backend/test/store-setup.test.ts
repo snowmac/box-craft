@@ -13,6 +13,9 @@ interface FakeState {
 	userErrors?: Array<{ field: string[]; message: string }>;
 	published?: boolean;
 	createdStatus?: string;
+	inventoryPolicy?: string;
+	inventoryTracked?: boolean;
+	inventoryGuardVariables?: { productId: string; variants: unknown[] };
 }
 
 function fakeClient(state: FakeState): AdminClient {
@@ -55,6 +58,18 @@ function fakeClient(state: FakeState): AdminClient {
 						userErrors: state.userErrors ?? [],
 					},
 				};
+			case "BoxcraftBundleVariantInventory":
+				return {
+					productVariant: {
+						inventoryPolicy: state.inventoryPolicy ?? "CONTINUE",
+						inventoryItem: { tracked: state.inventoryTracked ?? false },
+					},
+				};
+			case "BoxcraftGuardBundleVariantInventory":
+				state.inventoryPolicy = "DENY";
+				state.inventoryTracked = true;
+				state.inventoryGuardVariables = variables as { productId: string; variants: unknown[] };
+				return { productVariantsBulkUpdate: { userErrors: state.userErrors ?? [] } };
 			case "BoxcraftCreateCartTransform": {
 				const mf = (variables.metafields as Array<{ value: string }>)[0];
 				state.cartTransforms.push({ id: "gid://shopify/CartTransform/1", metafield: { value: mf.value } });
@@ -80,6 +95,8 @@ test("fresh store: creates the bundle product, then activates the function point
 		"BoxcraftOnlineStorePublication",
 		"BoxcraftBundlePublished",
 		"BoxcraftPublishBundleProduct",
+		"BoxcraftBundleVariantInventory",
+		"BoxcraftGuardBundleVariantInventory",
 		"BoxcraftCartTransforms",
 		"BoxcraftCreateCartTransform",
 	]);
@@ -87,6 +104,15 @@ test("fresh store: creates the bundle product, then activates the function point
 	// Unlisted: reachable by the merge but not in search/collections.
 	assert.equal(state.createdStatus, "UNLISTED");
 	assert.equal(state.published, true);
+	// A freshly created bundle product's placeholder variant isn't bought
+	// standalone: tracked + deny-oversell (D9 fix — linesMerge deducts
+	// inventory from the real component variants, not this one).
+	assert.equal(state.inventoryPolicy, "DENY");
+	assert.equal(state.inventoryTracked, true);
+	assert.deepEqual(state.inventoryGuardVariables, {
+		productId: PRODUCT,
+		variants: [{ id: VARIANT, inventoryPolicy: "DENY", inventoryItem: { tracked: true } }],
+	});
 });
 
 test("reinstall: reuses the existing tagged bundle product instead of creating another", async () => {
@@ -101,10 +127,46 @@ test("already set up: only reads, makes no changes", async () => {
 		cartTransforms: [{ id: "gid://shopify/CartTransform/1", metafield: { value: VARIANT } }],
 		bundleProductVariant: VARIANT,
 		published: true,
+		inventoryPolicy: "DENY",
+		inventoryTracked: true,
 		calls: [],
 	};
 	await ensureStoreSetup(fakeClient(state));
-	assert.deepEqual(state.calls, ["BoxcraftBundleProduct", "BoxcraftOnlineStorePublication", "BoxcraftBundlePublished", "BoxcraftCartTransforms"]);
+	assert.deepEqual(state.calls, [
+		"BoxcraftBundleProduct",
+		"BoxcraftOnlineStorePublication",
+		"BoxcraftBundlePublished",
+		"BoxcraftBundleVariantInventory",
+		"BoxcraftCartTransforms",
+	]);
+});
+
+test("existing bundle variant not yet guarded (installed before this fix) gets tracked + deny-oversell set", async () => {
+	const state: FakeState = {
+		cartTransforms: [{ id: "gid://shopify/CartTransform/1", metafield: { value: VARIANT } }],
+		bundleProductVariant: VARIANT,
+		published: true,
+		// Defaults: inventoryPolicy CONTINUE, untracked — as any variant
+		// created before this fix would still be.
+		calls: [],
+	};
+	await ensureStoreSetup(fakeClient(state));
+	assert.ok(state.calls.includes("BoxcraftGuardBundleVariantInventory"));
+	assert.equal(state.inventoryPolicy, "DENY");
+	assert.equal(state.inventoryTracked, true);
+});
+
+test("already guarded (tracked + deny): no mutation call, idempotent", async () => {
+	const state: FakeState = {
+		cartTransforms: [{ id: "gid://shopify/CartTransform/1", metafield: { value: VARIANT } }],
+		bundleProductVariant: VARIANT,
+		published: true,
+		inventoryPolicy: "DENY",
+		inventoryTracked: true,
+		calls: [],
+	};
+	await ensureStoreSetup(fakeClient(state));
+	assert.ok(!state.calls.includes("BoxcraftGuardBundleVariantInventory"));
 });
 
 test("existing store whose bundle product was never published gets it published", async () => {

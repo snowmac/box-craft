@@ -46,10 +46,14 @@ api_version = "2026-01"
 # the Cart Transform function on each store (cartTransformCreate).
 # write_publications: app-backend publishes the bundle parent product to
 # the Online Store — Shopify skips linesMerge for an unpublished parent.
+# write_inventory: app-backend tracks + deny-oversells the bundle parent
+# variant's own inventory (productVariantsBulkUpdate's inventoryItem.tracked
+# field), so its direct product page can't be bought standalone — merge
+# itself deducts inventory from the real component variants, not this one.
 # read_orders (bundle sales attribution) is temporarily withheld — its
 # orders/paid webhook is disabled above pending Protected Customer Data
 # approval. Keep in sync with SHOPIFY_SCOPES in workers/app-backend/wrangler.toml.
-scopes = "read_inventory,read_locations,write_products,write_cart_transforms,write_publications"
+scopes = "read_inventory,read_locations,write_products,write_cart_transforms,write_publications,write_inventory"
 
 [auth]
 redirect_urls = [ "https://box-craft-app-backend.adam-bourg.workers.dev/auth/callback" ]

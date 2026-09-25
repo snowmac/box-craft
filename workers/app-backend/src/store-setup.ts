@@ -27,7 +27,46 @@ const METAFIELD = { namespace: "$app", key: "bundle_parent_variant_id", type: "s
 export async function ensureStoreSetup(admin: AdminClient): Promise<void> {
 	const bundle = await ensureBundleProduct(admin);
 	await ensurePublishedToOnlineStore(admin, bundle.productId);
+	await ensureInventoryGuarded(admin, bundle.productId, bundle.variantId);
 	await ensureCartTransform(admin, bundle.variantId);
+}
+
+// The bundle product's direct URL (/products/boxcraft-bundle) is otherwise
+// reachable and "Add to cart" would sell it standalone — a $0 order for a
+// product that exists only to be a linesMerge target. Cart Transform's own
+// linesMerge deducts inventory from the original merged component cart
+// lines, not from parentVariantId's own inventory (confirmed via the
+// Function API schema — LinesMergeOperation.cartLines is CartLineInput,
+// which carries only cartLineId/quantity and no separate merchandiseId,
+// unlike LineExpandOperation's ExpandedItem, which does; corroborated by
+// this repo's own prior live checkout verification showing the merged
+// line's real components listed underneath it — see work-log.md's "First
+// end-to-end bundle merge"), so tracking and zero-stocking the parent
+// variant only blocks the standalone purchase and has no effect on a real
+// bundle checkout. Idempotent: a no-op once already guarded, so this is
+// safe to run on every install/reinstall, including a store whose bundle
+// product predates this fix.
+async function ensureInventoryGuarded(admin: AdminClient, productId: string, variantId: string): Promise<void> {
+	const { productVariant } = await admin(
+		`query BoxcraftBundleVariantInventory($id: ID!) {
+			productVariant(id: $id) { inventoryPolicy inventoryItem { tracked } }
+		}`,
+		{ id: variantId },
+	);
+	if (productVariant.inventoryPolicy === "DENY" && productVariant.inventoryItem.tracked) return;
+
+	const { productVariantsBulkUpdate } = await admin(
+		`mutation BoxcraftGuardBundleVariantInventory($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
+			productVariantsBulkUpdate(productId: $productId, variants: $variants) {
+				userErrors { field message }
+			}
+		}`,
+		{
+			productId,
+			variants: [{ id: variantId, inventoryPolicy: "DENY", inventoryItem: { tracked: true } }],
+		},
+	);
+	throwOnUserErrors("productVariantsBulkUpdate", productVariantsBulkUpdate.userErrors);
 }
 
 async function ensureCartTransform(admin: AdminClient, parentVariantId: string): Promise<void> {
