@@ -283,6 +283,23 @@ succeeded, and cleaning up the stored token on `app/uninstalled`.
   integration-instead-of-reinvention path (Seal Subscriptions' open API
   first, Recharge pending partner approval).
 
+- **Multi-pool boxes (2026-09-25)**: a box can now define 1-5 pools, each
+  with its own required exact pick count (1-20 items), sum capped at 20
+  total — same ceiling `pick_count` always had, chosen to keep the picker
+  UI and Cart Transform math within already-tested ranges
+  (`specs/product/multi-pool-boxes-plan.md`'s D3). A box saved before this
+  plan (the seeded `default` box included) keeps working completely
+  unmigrated: `shared/boxes.ts`'s `normalizeBox()` synthesizes a single
+  pool from its existing `collection_handle`/`pick_count` columns on every
+  read, so nothing needs a backfill or a forced re-save. It upgrades to a
+  real, explicit `pools` value the first time a merchant next opens and
+  saves it in the admin UI's new pool editor — there's no other migration
+  path and none is needed. `Pool.collection_handle` is typed nullable
+  (the plan's own inline sketch wrote it as a bare `string`) specifically
+  so that synthesis can represent the seeded default box's fallback-to-
+  block-settings case, which has always had a `null` collection_handle,
+  without a special case.
+
 ## Known gaps (explicitly out of scope for what a headless session can do)
 
 - **No live deploy or real-store test** of any of this. All verification

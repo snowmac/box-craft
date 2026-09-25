@@ -1376,3 +1376,144 @@ roadmap item, not worth doing proactively at current scale.
 picker and Cart Transform suites, typecheck clean everywhere, no
 `wrangler.toml` changes, nothing redeployed differently — a pure
 type-level refactor as scoped.
+
+## 2026-09-25 — Multi-pool boxes (`multi-pool-boxes-plan.md`)
+
+A box can now define 1-5 pools, each pointing at a collection with its
+own required exact pick count, all merged into one bundle at checkout
+— "2 light roasts + 1 medium roast" rather than only "pick any 4 from
+this collection." Existing boxes (the seeded `default` box included)
+keep working with zero merchant action.
+
+**T1 done — data layer.** `db/migrations/0002_box_pools.sql`: additive
+`pools TEXT` column, nullable. `shared/boxes.ts`: `Pool`, `BoxRow`,
+`normalizeBox()` (the single source of legacy synthesis — a row with
+`pools` NULL reads as one pool built from its existing
+`collection_handle`/`pick_count`), `totalPickCount()`. Deviated from
+the plan's own inline type sketch: `Pool.collection_handle` is
+nullable, not a bare `string`, so the seeded default box's existing
+null-collection fallback-to-block-settings case round-trips through a
+pool without a special case (see `assumptions.md`). `workers/app-
+backend/src/db.ts` now selects/writes the `pools` column via
+`normalizeBox`; `validate.ts`'s `toBox` got a minimal pools-or-
+synthesize fallback so the package kept compiling and round-tripping
+correctly through this task, ahead of T2's real validation. Migration
+verified applying cleanly against a local throwaway D1. 7 new tests
+(`test/boxes.test.ts`), 77 tests in root (was 70).
+
+**T2 done — `validatePools`.** 1-5 pools, each `collection_handle` a
+non-empty string, each `count` 1-20, sum ≤ 20 (D3).
+`validateBoxInput` now validates `pools` instead of direct
+`collection_handle`/`pick_count`, which become derived — `toBox` sets
+`collection_handle` from `pools[0]` and `pick_count` from
+`totalPickCount(pools)` (D4/D5), so Cart Transform's discount math and
+every other pools-unaware reader need zero changes. Folded the `toBox`
+derivation into this task rather than deferring to T3, since T2's own
+contract change made the two inseparable within one working state.
+Updated the pre-existing validate/API tests to the new contract, added
+every rejection case from the plan's own accept criteria. 124 tests in
+app-backend (was 115).
+
+**T3 done — Boxes API + metafield writer round-trip.** No production
+code change needed — T1 and T2 already wired POST/PUT/GET `/api/boxes`
+and `writeBoxesMetafields` correctly; this task proved it. New tests:
+a 2-pool POST round-trips through GET with both pools and the derived
+`pick_count`/`collection_handle` intact; a row inserted directly with
+`pools` NULL (simulating pre-migration data) reads back synthesized
+through the real API route, not just the unit-level `normalizeBox`
+test from T1. Along the way, found and fixed a real bug in `api.test
+.ts`'s own fake D1 mock: it silently dropped the `pools` bind argument
+(a stale 7-element destructure against `upsertBox`'s now 9-argument
+INSERT), so every pre-existing single-pool box test happened to still
+pass by coincidence (its synthesized fallback equals its real pools) —
+a genuine multi-pool round-trip would have silently lost its second
+pool without the fix. 127 tests in app-backend (was 124).
+
+**T4 done — admin UI pool editor.** The Boxes card's create/edit form
+now has a repeatable pool row (collection handle + count, Remove), an
+"Add pool" button disabled at 5 rows, and a guard against removing the
+last remaining row — all mirroring D3's server-side caps client-side.
+Submitting now sends `pools`; opening an existing box for edit
+pre-fills from its (always-populated) `pools`. Deviated from the
+plan's own test note: this codebase has no DOM-testing dependency and
+explicitly doesn't unit-test `admin.js`'s DOM wiring anywhere else
+(T12's own entry above: "DOM glue reviewed by eye") — didn't add one
+for a single form. Manual verification on `box-craft-demo` is the same
+sandbox gap already flagged for T11/T12/T14, added here too. No new
+automated tests this task.
+
+**T5 done — picker renders one section per pool.** New
+`snippets/pick-n-picker-pool.liquid` renders one pool's section
+(heading, item grid, its own counter) — shared by every pool a
+matched box defines and by the block-setting fallback (rendered once,
+as pool 0), avoiding two divergent code paths. The block serializes
+each pool's index/count/collection_handle into a `<script
+type="application/json" data-boxcraft-pools>` block, per the plan's
+own choice to avoid fragile multi-value data-attributes now that a box
+can have up to 5 pools.
+
+`pick-n-picker.js`'s selection state is now `Map<poolIndex,
+Map<variantId, {price}>>`. New pure, exported helpers —
+`allPoolsFull()` gates "Add Bundle" on every pool matching its
+required count exactly, `flattenSelections()` collapses to one flat
+variant-id map. The guardrail check and add-to-cart payload are
+unchanged past that flattening point — `computeBundleTotal`/
+`buildAddToCartPayload` still take a flat `Map` exactly as before
+pools existed; only `initPicker`'s DOM-wiring layer changed. 6 new
+tests (partial pools don't enable Add, exactly-full pools do, an
+over-selected pool doesn't count as full, the legacy single-pool shape
+still works, flattening produces one entry per variant across pools,
+and that flattened output feeds `buildAddToCartPayload` correctly). 13
+tests in the picker suite (was 7). `shopify theme check --path . -C
+theme-check:theme-app-extension` clean (3 files, no offenses) — found
+the right invocation for a theme app extension directory (`shopify
+theme check` alone prompts interactively and fails non-interactively;
+needs `--path` and an explicit config since there's no theme root to
+auto-detect one from). CSS grew from 2208 to 2522 bytes, still under
+the 3 KB budget.
+
+**T6 done — Cart Transform / Guardrail regression tests (D9).** No
+production code change, exactly as D9 predicted by construction: the
+Cart Transform function only ever reads a box's `handle` and
+`discount`; `checkCompatibility` only ever takes a flat variant-id
+list. Neither has any concept of pools. New tests feed the real,
+richer merchant-admin Box JSON shape (not the trimmed local
+`BundleBox` this extension declares) through unmodified production
+code and confirm identical output to the single-pool equivalent, for
+both a flat percent and a tiered discount; a guardrail test with
+variant ids explicitly drawn from two named pools confirms a
+compatible combination checks, and a cross-pool conflict blocks,
+exactly as any flat list would. 79 tests in root (was 77), 22 in
+cart-transform (was 20).
+
+**T7 (this entry).** `assumptions.md` updated with the pool cap (D3)
+and the unmigrated-until-resaved behavior (D2). 331 tests across every
+package (root 79, webhook-consumer 20, app-backend 127, ops-console
+70, cart-transform 22, picker 13), typecheck clean everywhere, no
+`wrangler.toml` changes across T1-T6.
+
+Not verified in this sandbox, same limitation as the admin-and-ops
+cards before it: the admin UI's new pool editor and the picker's
+multi-pool rendering haven't been checked inside a real browser/
+Shopify admin iframe or a real storefront — everything is unit-tested
+against mocked D1/KV/Admin API and pure-logic assertions only. The
+plan's own human checkpoints (below) cover exactly this.
+
+### Human checkpoints (multi-pool-boxes-plan.md — not run from this sandbox)
+
+1. **`shopify app deploy --allow-updates`** from `shopify-app/` —
+   ships the picker's multi-pool Liquid/JS/CSS (T5, including the new
+   `snippets/` directory).
+2. **D1 migration**: `npx wrangler d1 migrations apply boxcraft
+   --remote` for `0002_box_pools.sql` — schema-only `ALTER TABLE ADD
+   COLUMN`, safe, but still a live-database action for @adam.bourg to
+   run, same as `0001_init.sql` and the D1 provisioning above.
+3. **Real multi-pool verification on `box-craft-demo`**: create two
+   small test collections, build a 2-pool box in the admin UI (2 from
+   one + 1 from the other), add the block to a product page, and
+   confirm the picker renders two sections, "Add Bundle" only enables
+   once both pools are full, and checkout merges all 3 into one bundle
+   line at the correct price.
+4. **Theme editor**: if this box uses a different handle than
+   `default`, set the Pick-N block's Box handle setting to match, same
+   as before.
