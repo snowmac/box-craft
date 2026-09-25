@@ -5,6 +5,7 @@
 // response never says which specific variants it didn't have data for —
 // only an aggregate count goes into its own recorded event.
 import { bitmapKey, toVariantGid } from "../../../shared/bitmap.ts";
+import type { KVLike } from "../../../shared/kv.ts";
 
 export function parseVariantIdsInput(raw: string): string[] {
 	return raw
@@ -13,7 +14,7 @@ export function parseVariantIdsInput(raw: string): string[] {
 		.filter(Boolean);
 }
 
-export async function findMissingBitmapEntries(kv: KVNamespace, variantIds: string[]): Promise<string[]> {
+export async function findMissingBitmapEntries(kv: KVLike, variantIds: string[]): Promise<string[]> {
 	const missing: string[] = [];
 	for (const id of variantIds) {
 		const raw = await kv.get(bitmapKey(toVariantGid(id)));
@@ -28,7 +29,7 @@ export interface GuardrailTestResult {
 }
 
 export async function runGuardrailTest(
-	locationBitmap: KVNamespace,
+	locationBitmap: KVLike,
 	guardrailWorkerUrl: string,
 	shop: string,
 	variantIds: string[],

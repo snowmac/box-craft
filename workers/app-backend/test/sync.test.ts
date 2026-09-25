@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { runSync, getLastSyncRun, type SyncEnv } from "../src/sync.ts";
+import type { KVLike } from "../../../shared/kv.ts";
 
 const SHOP = "box-craft-demo.myshopify.com";
 
@@ -71,7 +72,7 @@ function fakeKv() {
 			async put(key: string, value: string) {
 				puts.push({ key, value });
 			},
-		} as unknown as KVNamespace,
+		} as unknown as KVLike,
 		puts,
 	};
 }

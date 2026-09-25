@@ -2,9 +2,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { lookupVariantBitmap, lookupInventoryItemVariant } from "../src/kv-inspector.ts";
 import { bitmapKey, inventoryItemMapKey } from "../../../shared/bitmap.ts";
+import type { KVLike } from "../../../shared/kv.ts";
 
-function mockKv(entries: Record<string, string>) {
-	return { async get(key: string) { return key in entries ? entries[key] : null; } } as unknown as KVNamespace;
+function mockKv(entries: Record<string, string>): KVLike {
+	return { async get(key: string) { return key in entries ? entries[key] : null; } } as unknown as KVLike;
 }
 
 test("lookupVariantBitmap accepts a numeric variant id and normalizes to a GID key", async () => {

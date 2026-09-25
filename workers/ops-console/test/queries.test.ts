@@ -9,6 +9,7 @@ import {
 	getSyncHistory,
 } from "../src/queries.ts";
 import type { D1Like } from "../../../shared/events.ts";
+import type { KVLike } from "../../../shared/kv.ts";
 
 function eventRow(overrides: Partial<{ id: number; ts: number; shop: string | null; source: string; type: string; level: string; data: string | null }> = {}) {
 	return {
@@ -186,7 +187,7 @@ test("listShops reads shop records from SHOP_TOKENS by prefix", async () => {
 		async get(key: string) {
 			return store.get(key) ?? null;
 		},
-	} as unknown as KVNamespace;
+	} as unknown as KVLike;
 
 	const shops = await listShops(kv);
 	assert.equal(shops.length, 2);

@@ -3,6 +3,7 @@ import {
 	bitmapKey,
 	type BitmapEntry,
 } from "../../../shared/bitmap.ts";
+import type { KVLike } from "../../../shared/kv.ts";
 
 // How long to wait after the last event for a SKU before writing the
 // bitmap. Resolves the webhook-volume open item from the plan: a burst of
@@ -19,7 +20,7 @@ interface PendingUpdate {
 }
 
 export interface DebouncerEnv {
-	LOCATION_BITMAP: KVNamespace;
+	LOCATION_BITMAP: KVLike;
 }
 
 export class SkuDebouncer implements DurableObject {

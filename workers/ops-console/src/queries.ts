@@ -4,6 +4,7 @@
 // error grouping) are specific to what an operator needs to see, not what
 // the merchant admin page or the Workers themselves need.
 import type { D1Like } from "../../../shared/events.ts";
+import type { KVLike } from "../../../shared/kv.ts";
 import { getShopConfig, type ShopConfig } from "../../../shared/shop-config.ts";
 import { getLastSyncRun, type LastSyncRun } from "../../app-backend/src/sync.ts";
 import { loadPerformanceMetrics } from "../../app-backend/src/performance.ts";
@@ -17,7 +18,7 @@ export interface ShopRecord {
 
 // SHOP_TOKENS holds the only list of installed shops there is — there's no
 // separate "shops" table. Keys are "shop:<domain>".
-export async function listShops(shopTokens: KVNamespace): Promise<ShopRecord[]> {
+export async function listShops(shopTokens: KVLike): Promise<ShopRecord[]> {
 	const shops: ShopRecord[] = [];
 	let cursor: string | undefined;
 	do {
@@ -48,7 +49,7 @@ export interface OverviewShopRow {
 
 const ONE_DAY = 1;
 
-export async function loadOverviewShops(env: { DB: D1Like; SHOP_TOKENS: KVNamespace }): Promise<OverviewShopRow[]> {
+export async function loadOverviewShops(env: { DB: D1Like; SHOP_TOKENS: KVLike }): Promise<OverviewShopRow[]> {
 	const shops = await listShops(env.SHOP_TOKENS);
 	return Promise.all(
 		shops.map(async (s) => {

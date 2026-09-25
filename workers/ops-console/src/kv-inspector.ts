@@ -2,12 +2,13 @@
 // HTML so the KV-key logic (shared with the Guardrail Worker/webhook
 // consumer) is directly testable.
 import { bitmapKey, toVariantGid, inventoryItemMapKey, type BitmapEntry } from "../../../shared/bitmap.ts";
+import type { KVLike } from "../../../shared/kv.ts";
 
-export async function lookupVariantBitmap(kv: KVNamespace, variantId: string): Promise<BitmapEntry | null> {
+export async function lookupVariantBitmap(kv: KVLike, variantId: string): Promise<BitmapEntry | null> {
 	const raw = await kv.get(bitmapKey(toVariantGid(variantId)));
 	return raw ? (JSON.parse(raw) as BitmapEntry) : null;
 }
 
-export async function lookupInventoryItemVariant(kv: KVNamespace, inventoryItemId: string): Promise<string | null> {
+export async function lookupInventoryItemVariant(kv: KVLike, inventoryItemId: string): Promise<string | null> {
 	return kv.get(inventoryItemMapKey(inventoryItemId));
 }

@@ -5,6 +5,7 @@
 // outage must never stop the sync itself from running.
 import { runBackfill, type BackfillKvEntry, type FetchLike } from "../../../shared/backfill.ts";
 import { recordEvent, type D1Like, type EventContext } from "../../../shared/events.ts";
+import type { KVLike } from "../../../shared/kv.ts";
 import { ADMIN_API_VERSION } from "./admin-client.ts";
 
 export type SyncTrigger = "setup" | "manual" | "cron";
@@ -66,7 +67,7 @@ async function finishSyncRun(
 	}
 }
 
-async function writeBitmapEntries(kv: KVNamespace, entries: BackfillKvEntry[]): Promise<void> {
+async function writeBitmapEntries(kv: KVLike, entries: BackfillKvEntry[]): Promise<void> {
 	for (let i = 0; i < entries.length; i += KV_WRITE_BATCH_SIZE) {
 		const batch = entries.slice(i, i + KV_WRITE_BATCH_SIZE);
 		await Promise.all(batch.map((e) => kv.put(e.key, e.value)));
@@ -75,7 +76,7 @@ async function writeBitmapEntries(kv: KVNamespace, entries: BackfillKvEntry[]): 
 
 export interface SyncEnv {
 	DB: D1Like;
-	LOCATION_BITMAP: KVNamespace;
+	LOCATION_BITMAP: KVLike;
 }
 
 export interface LastSyncRun {

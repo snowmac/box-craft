@@ -2,9 +2,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parseVariantIdsInput, findMissingBitmapEntries, runGuardrailTest } from "../src/guardrail-tester.ts";
 import { bitmapKey } from "../../../shared/bitmap.ts";
+import type { KVLike } from "../../../shared/kv.ts";
 
-function mockKv(entries: Record<string, string>) {
-	return { async get(key: string) { return key in entries ? entries[key] : null; } } as unknown as KVNamespace;
+function mockKv(entries: Record<string, string>): KVLike {
+	return { async get(key: string) { return key in entries ? entries[key] : null; } } as unknown as KVLike;
 }
 
 test("parseVariantIdsInput splits on commas and newlines, trimming and dropping blanks", () => {

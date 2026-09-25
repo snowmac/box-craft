@@ -7,13 +7,14 @@ import { runSync, getLastSyncRun } from "./sync.ts";
 import { checkSetupStatus } from "./setup-status.ts";
 import { loadPerformanceMetrics, type PerformanceWindow } from "./performance.ts";
 import type { D1Like, EventContext } from "../../../shared/events.ts";
+import type { KVLike } from "../../../shared/kv.ts";
 
 export interface ApiEnv {
-	SHOP_TOKENS: KVNamespace;
+	SHOP_TOKENS: KVLike;
 	SHOPIFY_CLIENT_ID: string;
 	SHOPIFY_CLIENT_SECRET: string;
 	DB: D1Like;
-	LOCATION_BITMAP: KVNamespace;
+	LOCATION_BITMAP: KVLike;
 }
 
 const VALID_PERFORMANCE_WINDOWS: PerformanceWindow[] = [7, 30];
