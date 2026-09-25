@@ -2,6 +2,7 @@ import { inventoryItemMapKey } from "../../../shared/bitmap.ts";
 import { verifyShopifyHmac } from "../../../shared/hmac.ts";
 import { recordEvent, type D1Like, type EventContext } from "../../../shared/events.ts";
 import { SkuDebouncer, type DebouncerEnv } from "./debouncer.ts";
+import { createDurableObjectDebouncer } from "./debouncer-adapter.ts";
 import { computeBundleSaleSummary, type OrdersPaidPayload } from "./orders-paid.ts";
 
 export interface Env extends DebouncerEnv {
@@ -101,16 +102,10 @@ export async function handleWebhook(
 
 	const locationId = `gid://shopify/Location/${payload.location_id}`;
 
-	const doId = env.SKU_DEBOUNCER.idFromName(variantGid);
-	const stub = env.SKU_DEBOUNCER.get(doId);
-
-	await stub.fetch("https://sku-debouncer/update", {
-		method: "POST",
-		body: JSON.stringify({
-			skuKey: variantGid,
-			locationId,
-			available: payload.available > 0,
-		}),
+	const debouncer = createDurableObjectDebouncer(env);
+	await debouncer.schedule(variantGid, {
+		locationId,
+		available: payload.available > 0,
 	});
 
 	recordEvent(env.DB, ctx, {
