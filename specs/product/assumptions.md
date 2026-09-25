@@ -264,6 +264,25 @@ succeeded, and cleaning up the stored token on `app/uninstalled`.
   `shopify.app.toml`'s comment on the `orders/paid` subscription and the
   work log's T10 entry.
 
+- **Positioning (2026-09-25)**: after a same-day competitive review (see
+  `draft.md`'s "Competitive landscape" section), the location guardrail
+  was confirmed as a real, verified gap — nobody else combines a
+  build-a-box picker with pre-cart, location-aware blocking — but it was
+  judged not a defensible platform on its own: no technical moat (several
+  competitors already build on the same Cart Transform primitive), and a
+  determined incumbent could copy the concept in a sprint. Repositioned
+  around two things instead: (1) unrestricted flat pricing — $9.99/mo
+  launch, $19/mo target — undercutting every competitor's revenue-scaled
+  tiers, and (2) letting the *customer* build the bundle, with the
+  merchant setting rules (what can/can't combine, discounts) rather than
+  the merchant pre-curating fixed boxes. The guardrail stays as one real
+  feature inside that story, not the headline. Subscription build-a-box
+  was evaluated as a possible third pillar and rejected as a from-scratch
+  build (Recharge/Loop already ship it maturely, and Shopify's platform
+  provides no auto-billing or dunning) — see `draft.md` for the
+  integration-instead-of-reinvention path (Seal Subscriptions' open API
+  first, Recharge pending partner approval).
+
 ## Known gaps (explicitly out of scope for what a headless session can do)
 
 - **No live deploy or real-store test** of any of this. All verification
