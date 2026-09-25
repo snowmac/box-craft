@@ -232,3 +232,74 @@ test("D11: a tampered _bundle_price-shaped field on the line has no effect on th
 	const result = buildCartTransformOperations(input([tamperedLine], { boxes: [PERCENT_BOX] }));
 	assert.equal(result.operations[0].linesMerge.price?.percentageDecrease.value, "25");
 });
+
+// --- Multi-pool boxes regression (D9): the metafield JSON gains a `pools`
+// array and the box's collection_handle/pick_count become derived sums,
+// but this function only ever reads handle + discount, keyed by
+// _bundle_box and lines.length — pools never enters it. These tests feed
+// the real richer JSON shape (as boxes-metafield.ts actually writes it,
+// not the trimmed BundleBox this extension declares) through unmodified
+// production code and confirm identical output to the single-pool
+// equivalent with the same pick_count/discount.
+
+test("a pools-shaped box metafield doesn't change discount behavior vs. the equivalent single-pool box", () => {
+	// The real merchant-admin Box shape (shared/boxes.ts), not the
+	// trimmed local BundleBox — proves extra fields are simply ignored.
+	const poolsShapedBox = {
+		handle: "coffee",
+		title: "Coffee Box",
+		collection_handle: "light-roast",
+		pick_count: 3,
+		discount: { type: "percent", percent: 15 },
+		active: true,
+		pools: [
+			{ collection_handle: "light-roast", count: 2 },
+			{ collection_handle: "medium-roast", count: 1 },
+		],
+	};
+	const singlePoolEquivalent: BundleBox = { handle: "coffee", discount: { type: "percent", percent: 15 } };
+
+	const lines = [1, 2, 3].map((i) =>
+		line({ id: `gid://shopify/CartLine/${i}`, bundleId: { value: "bundle-a" }, bundleBox: { value: "coffee" } }),
+	);
+
+	const poolsResult = buildCartTransformOperations({
+		cartTransform: {
+			metafield: { value: PARENT_VARIANT_ID },
+			boxes: { value: JSON.stringify([poolsShapedBox]) },
+		},
+		cart: { lines },
+	});
+	const singlePoolResult = buildCartTransformOperations(input(lines, { boxes: [singlePoolEquivalent] }));
+
+	assert.deepEqual(poolsResult, singlePoolResult);
+	assert.equal(poolsResult.operations[0].linesMerge.price?.percentageDecrease.value, "15");
+});
+
+test("a pools-shaped tiered box picks the tier matching the actual number of cart lines, same as single-pool", () => {
+	const poolsShapedTieredBox = {
+		handle: "tiered-box",
+		title: "Tiered Box",
+		collection_handle: "flavors",
+		pick_count: 4,
+		discount: TIERED_BOX.discount,
+		active: true,
+		pools: [{ collection_handle: "flavors", count: 4 }],
+	};
+
+	const lines = [1, 2, 3, 4].map((i) =>
+		line({ id: `gid://shopify/CartLine/${i}`, bundleId: { value: "bundle-a" }, bundleBox: { value: "tiered-box" } }),
+	);
+
+	const poolsResult = buildCartTransformOperations({
+		cartTransform: {
+			metafield: { value: PARENT_VARIANT_ID },
+			boxes: { value: JSON.stringify([poolsShapedTieredBox]) },
+		},
+		cart: { lines },
+	});
+	const singlePoolResult = buildCartTransformOperations(input(lines, { boxes: [TIERED_BOX] }));
+
+	assert.deepEqual(poolsResult, singlePoolResult);
+	assert.equal(poolsResult.operations[0].linesMerge.price?.percentageDecrease.value, "20");
+});

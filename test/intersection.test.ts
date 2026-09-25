@@ -123,3 +123,32 @@ test("default policy with no known flags behaves exactly as before (backward com
 		assert.deepEqual(result.locations, ["L2"]);
 	}
 });
+
+// Multi-pool boxes (D9/T6): by the time a selection reaches the guardrail,
+// the picker's flattenSelections() has already collapsed every pool into
+// one flat variant-id list — checkCompatibility has no concept of pools
+// and needs none. These variants are drawn from two different pools (2
+// from "light-roast", 1 from "medium-roast") but arrive here exactly as
+// any other flat list would.
+test("multi-pool selection: a compatible combination drawn from two different pools checks the same as any flat list", () => {
+	const result = checkCompatibility([
+		{ variantId: "light-roast-1", locations: ["L1", "L2"] }, // pool 0
+		{ variantId: "light-roast-2", locations: ["L1", "L3"] }, // pool 0
+		{ variantId: "medium-roast-1", locations: ["L1"] }, // pool 1
+	]);
+	assert.equal(result.compatible, true);
+	if (result.compatible) {
+		assert.deepEqual(result.locations, ["L1"]);
+	}
+});
+
+test("multi-pool selection: a conflict between variants from different pools blocks exactly like a same-pool conflict", () => {
+	const result = checkCompatibility([
+		{ variantId: "light-roast-1", locations: ["L1"] }, // pool 0
+		{ variantId: "medium-roast-1", locations: ["L2"] }, // pool 1
+	]);
+	assert.equal(result.compatible, false);
+	if (!result.compatible) {
+		assert.deepEqual(result.conflictingVariants.sort(), ["light-roast-1", "medium-roast-1"]);
+	}
+});
