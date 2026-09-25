@@ -262,7 +262,8 @@ body {
   margin-bottom: 6px;
 }
 
-.tier-row {
+.tier-row,
+.pool-row {
   display: flex;
   align-items: flex-end;
   gap: 8px;

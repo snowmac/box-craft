@@ -235,8 +235,11 @@ function renderBoxesCard() {
       <input type="hidden" data-field="original_handle">
       <label>Handle <input type="text" data-field="handle" required pattern="[a-z0-9-]{1,40}"></label>
       <label>Title <input type="text" data-field="title" required></label>
-      <label>Collection handle <input type="text" data-field="collection_handle"></label>
-      <label>Pick count <input type="number" data-field="pick_count" min="1" max="20" required></label>
+      <fieldset class="fieldset">
+        <legend>Pools — pick N from each collection, all merged into one bundle</legend>
+        <div data-pools-rows></div>
+        <button type="button" class="button" data-add-pool>Add pool</button>
+      </fieldset>
       <label class="switch"><input type="checkbox" data-field="active" checked> Active</label>
       <fieldset class="fieldset">
         <legend>Discount</legend>
@@ -267,11 +270,41 @@ function tierRowHtml(minItems, percent) {
   </div>\`;
 }
 
+// D3: 1-5 pools per box, mirrored client-side (the server is the real
+// enforcement — see validatePools).
+const MAX_POOLS = 5;
+
+function poolRowHtml(collectionHandle, count) {
+  return \`<div class="pool-row">
+    <label>Collection handle <input type="text" data-pool-collection value="\${escapeHtml(collectionHandle ?? "")}" required></label>
+    <label>Count <input type="number" min="1" max="20" data-pool-count value="\${count ?? ""}" required></label>
+    <button type="button" class="button button--icon" data-remove-pool title="Remove pool">✕</button>
+  </div>\`;
+}
+
 function wireBoxesCard(el) {
   const form = el.querySelector("[data-box-form]");
   const rows = el.querySelector("[data-boxes-rows]");
   const errorEl = el.querySelector("[data-box-error]");
   const tiersRows = el.querySelector("[data-tiers-rows]");
+  const poolsRows = el.querySelector("[data-pools-rows]");
+  const addPoolButton = el.querySelector("[data-add-pool]");
+
+  function updateAddPoolButton() {
+    addPoolButton.disabled = poolsRows.querySelectorAll(".pool-row").length >= MAX_POOLS;
+  }
+
+  poolsRows.addEventListener("click", (e) => {
+    if (!e.target.matches("[data-remove-pool]")) return;
+    // Keep at least one pool row — a box always needs somewhere to pick from.
+    if (poolsRows.querySelectorAll(".pool-row").length <= 1) return;
+    e.target.closest(".pool-row").remove();
+    updateAddPoolButton();
+  });
+  addPoolButton.addEventListener("click", () => {
+    poolsRows.insertAdjacentHTML("beforeend", poolRowHtml());
+    updateAddPoolButton();
+  });
 
   function setDiscountType(type) {
     form.querySelector("[data-discount-percent]").hidden = type !== "percent";
@@ -297,9 +330,15 @@ function wireBoxesCard(el) {
     form.querySelector('[data-field="original_handle"]').value = box ? box.handle : "";
     form.querySelector('[data-field="handle"]').value = box ? box.handle : "";
     form.querySelector('[data-field="title"]').value = box ? box.title : "";
-    form.querySelector('[data-field="collection_handle"]').value = box ? box.collection_handle || "" : "";
-    form.querySelector('[data-field="pick_count"]').value = box ? box.pick_count : 4;
     form.querySelector('[data-field="active"]').checked = box ? box.active : true;
+
+    // Existing boxes always come back with pools populated (T1/T3's
+    // normalizeBox synthesizes one from legacy collection_handle/pick_count
+    // for anything saved before pools existed) — a brand-new box starts
+    // with one empty pool row, matching the old single-pool default.
+    const pools = box && box.pools && box.pools.length ? box.pools : [{ collection_handle: "", count: 4 }];
+    poolsRows.innerHTML = pools.map((p) => poolRowHtml(p.collection_handle, p.count)).join("");
+    updateAddPoolButton();
 
     const discount = (box && box.discount) || { type: "none" };
     form.querySelector('input[name="discount_type"][value="' + discount.type + '"]').checked = true;
@@ -348,13 +387,17 @@ function wireBoxesCard(el) {
       discount = { type: "tiered", tiers };
     }
 
+    const pools = Array.from(poolsRows.querySelectorAll(".pool-row")).map((row) => ({
+      collection_handle: row.querySelector("[data-pool-collection]").value,
+      count: Number(row.querySelector("[data-pool-count]").value),
+    }));
+
     const body = {
       handle: form.querySelector('[data-field="handle"]').value,
       title: form.querySelector('[data-field="title"]').value,
-      collection_handle: form.querySelector('[data-field="collection_handle"]').value || null,
-      pick_count: Number(form.querySelector('[data-field="pick_count"]').value),
       active: form.querySelector('[data-field="active"]').checked,
       discount,
+      pools,
     };
 
     const originalHandle = form.querySelector('[data-field="original_handle"]').value;
