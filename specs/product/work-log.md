@@ -1046,9 +1046,21 @@ backfill into the Worker. Human steps are batched at its end.
   API?~~ **Resolved (D6, T6):** per-shop `unknown_stock_policy`, default
   `allow` (fail open, matches everywhere else) with an operator-visible
   `block` option in the guardrail card.
-- **Bundle parent's direct URL** (`/products/boxcraft-bundle`) is
-  reachable; a shopper could buy the $0 parent alone. Guard it or accept?
-  *(Still open — not addressed by the admin-and-ops-plan.)*
+- ~~**Bundle parent's direct URL** (`/products/boxcraft-bundle`) is
+  reachable; a shopper could buy the $0 parent alone. Guard it or
+  accept?~~ **Resolved 2026-09-25: guard it.** Approach: set the parent
+  variant's inventory to tracked (`inventoryManagement: "SHOPIFY"`),
+  quantity 0, `inventoryPolicy: "DENY"` in `ensureBundleProduct`
+  (`workers/app-backend/src/store-setup.ts`) so the storefront "Add to
+  cart" on the direct product page is disabled/out of stock. **Not yet
+  implemented** — needs one thing confirmed first, since it's a live
+  Admin API mutation against a real store: verify Shopify's Cart
+  Transform deducts inventory from the *component* variants at checkout,
+  not the merged parent line, before making this change — otherwise
+  zeroing the parent's own inventory could break real bundle checkouts
+  instead of only blocking the standalone purchase. Check
+  shopify.dev's Cart Transform + inventory docs, or test directly on
+  `box-craft-demo`, before writing this.
 - ~~**Bundle discount:** `_bundle_price` is the plain sum, so bundles sell
   at list. What discount model (per tier/setting)?~~ **Resolved (D10,
   T5/T8):** per-box `none`/`percent`/`tiered` discount, merchant-editable
@@ -1078,10 +1090,18 @@ backfill into the Worker. Human steps are batched at its end.
   the change — check it drops out (likely index lag).
 
 **Business / launch**
-- Managed Pricing plans (Starter $19, Pro $49) — needs the app's
-  distribution method chosen (one-way decision).
-- Billing test flow, App Store listing/submission, Go-to-Market — not
-  started.
+- ~~Managed Pricing plans (Starter $19, Pro $49) — needs the app's
+  distribution method chosen (one-way decision).~~ **Resolved
+  2026-09-25: public App Store listing** (not custom/direct install).
+  Means: PCD approval is a real prerequisite before `read_orders` can go
+  live for real merchants (already disabled, see the `boxcraft-bundles-7`
+  entry above), and the beta-then-public launch sequence in `draft.md`'s
+  Go-to-Market section applies as written. Pricing itself is now
+  **$9.99/mo flat, unrestricted** (see `draft.md`'s "Pricing and Billing",
+  updated 2026-09-25) — still needs configuring as a single Managed
+  Pricing plan in the Partner Dashboard, not yet done.
+- Billing test flow, App Store listing/submission, PCD approval
+  request, Go-to-Market — not started.
 
 ## Operating BoxCraft
 
