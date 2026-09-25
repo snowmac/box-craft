@@ -61,7 +61,7 @@ function fakeD1(): D1Like {
 								const [shop, guardrail_enabled, unknown_stock_policy] = args as [string, number, string];
 								shopConfig.set(shop, { guardrail_enabled, unknown_stock_policy });
 							} else if (query.includes("INSERT INTO boxes")) {
-								const [shop, handle, title, collection_handle, pick_count, discount, active] = args;
+								const [shop, handle, title, collection_handle, pick_count, discount, pools, active] = args;
 								boxes.set(`${shop}\u0000${handle}`, {
 									shop,
 									handle,
@@ -69,6 +69,7 @@ function fakeD1(): D1Like {
 									collection_handle,
 									pick_count,
 									discount,
+									pools,
 									active,
 								});
 							} else if (query.includes("DELETE FROM boxes")) {
@@ -301,6 +302,54 @@ test("POST /api/boxes creates a box, syncs metafields, and GET /api/boxes lists 
 	assert.equal(boxes.length, 1);
 	assert.equal(boxes[0].handle, "coffee");
 	assert.equal(boxes[0].active, true);
+});
+
+test("POST /api/boxes with 2 pools round-trips through GET with both pools intact", async () => {
+	const env = baseEnv();
+	const newBox = {
+		handle: "coffee",
+		title: "Coffee Box",
+		pools: [
+			{ collection_handle: "light-roast", count: 2 },
+			{ collection_handle: "medium-roast", count: 1 },
+		],
+		discount: { type: "none" },
+	};
+
+	await withMockedFetch(metafieldSuccessFetch, async () => {
+		const res = await handleApi(
+			request("/api/boxes", { method: "POST", body: JSON.stringify(newBox) }),
+			new URL("https://x/api/boxes"),
+			env,
+			mockCtx(),
+		);
+		assert.equal(res.status, 201);
+	});
+
+	const listRes = await handleApi(request("/api/boxes"), new URL("https://x/api/boxes"), env, mockCtx());
+	const { boxes } = (await listRes.json()) as any;
+	assert.equal(boxes.length, 1);
+	assert.deepEqual(boxes[0].pools, newBox.pools);
+	// D4: pick_count/collection_handle are derived from pools, not sent.
+	assert.equal(boxes[0].pick_count, 3);
+	assert.equal(boxes[0].collection_handle, "light-roast");
+});
+
+test("GET /api/boxes synthesizes pools for a legacy row written before this migration", async () => {
+	const env = baseEnv();
+	// Simulate a row from before the pools column existed: written directly,
+	// bypassing toBox/upsertBox, with pools left NULL.
+	await env.DB.prepare(
+		"INSERT INTO boxes (shop, handle, title, collection_handle, pick_count, discount, pools, active, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+	)
+		.bind(SHOP, "legacy", "Legacy Box", "flavors", 4, JSON.stringify({ type: "none" }), null, 1, Date.now())
+		.run();
+
+	const listRes = await handleApi(request("/api/boxes"), new URL("https://x/api/boxes"), env, mockCtx());
+	const { boxes } = (await listRes.json()) as any;
+	const legacy = boxes.find((b: any) => b.handle === "legacy");
+	assert.ok(legacy);
+	assert.deepEqual(legacy.pools, [{ collection_handle: "flavors", count: 4 }]);
 });
 
 test("POST /api/boxes with invalid input returns 400 and never reaches the metafield sync", async () => {

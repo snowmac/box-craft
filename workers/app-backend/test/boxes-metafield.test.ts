@@ -73,6 +73,36 @@ test("throws when Shopify reports userErrors", async () => {
 	await assert.rejects(() => writeBoxesMetafields(admin, [BOX]), /too large/);
 });
 
+test("a multi-pool box's metafield payload carries pools alongside unchanged title/pick_count/discount", async () => {
+	const multiPoolBox: Box = {
+		handle: "coffee",
+		title: "Coffee Box",
+		collection_handle: "light-roast",
+		pick_count: 3,
+		discount: { type: "none" },
+		active: true,
+		pools: [
+			{ collection_handle: "light-roast", count: 2 },
+			{ collection_handle: "medium-roast", count: 1 },
+		],
+	};
+	const { admin, calls } = recordingAdmin({
+		BoxcraftAppInstallation: { currentAppInstallation: { id: "gid://shopify/AppInstallation/1" } },
+		BoxcraftCartTransformsForBoxes: { cartTransforms: { nodes: [] } },
+		BoxcraftSetBoxesMetafields: { metafieldsSet: { userErrors: [] } },
+	});
+
+	await writeBoxesMetafields(admin, [multiPoolBox]);
+
+	const setCall = calls.find((c) => c.query.includes("BoxcraftSetBoxesMetafields"));
+	const metafields = setCall!.variables!.metafields as Array<Record<string, unknown>>;
+	const [written] = JSON.parse(metafields[0].value as string);
+	assert.deepEqual(written.pools, multiPoolBox.pools);
+	assert.equal(written.title, "Coffee Box");
+	assert.equal(written.pick_count, 3);
+	assert.deepEqual(written.discount, { type: "none" });
+});
+
 test("serializes an empty boxes array (all deleted) as valid JSON", async () => {
 	const { admin, calls } = recordingAdmin({
 		BoxcraftAppInstallation: { currentAppInstallation: { id: "gid://shopify/AppInstallation/1" } },
