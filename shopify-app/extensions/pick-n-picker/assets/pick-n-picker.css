@@ -24,6 +24,23 @@
   color: #666;
 }
 
+.boxcraft-picker__pool {
+  display: flex;
+  flex-direction: column;
+  gap: var(--boxcraft-gap);
+}
+
+.boxcraft-picker__pool + .boxcraft-picker__pool {
+  margin-top: 0.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--boxcraft-border);
+}
+
+.boxcraft-picker__pool-title {
+  margin: 0;
+  font-size: 0.9375rem;
+}
+
 .boxcraft-picker__grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));

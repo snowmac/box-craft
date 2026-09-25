@@ -5,6 +5,8 @@ import {
 	buildAddToCartPayload,
 	shouldRunGuardrailCheck,
 	buildBundleAddedBeacon,
+	allPoolsFull,
+	flattenSelections,
 } from "../../extensions/pick-n-picker/assets/pick-n-picker.js";
 
 test("computeBundleTotal sums selected item prices", () => {
@@ -56,6 +58,70 @@ test("shouldRunGuardrailCheck is false below 2 selections", () => {
 test("shouldRunGuardrailCheck is true at 2 or more selections", () => {
 	assert.equal(shouldRunGuardrailCheck(2), true);
 	assert.equal(shouldRunGuardrailCheck(4), true);
+});
+
+test("allPoolsFull is false when any pool is only partially selected", () => {
+	const selections = new Map([
+		[0, new Map([["v1", { price: 1 }], ["v2", { price: 1 }]])], // full, needs 2
+		[1, new Map()], // empty, needs 1
+	]);
+	const requiredCounts = new Map([
+		[0, 2],
+		[1, 1],
+	]);
+	assert.equal(allPoolsFull(selections, requiredCounts), false);
+});
+
+test("allPoolsFull is true only once every pool is selected to its exact required count", () => {
+	const selections = new Map([
+		[0, new Map([["v1", { price: 1 }], ["v2", { price: 1 }]])],
+		[1, new Map([["v3", { price: 1 }]])],
+	]);
+	const requiredCounts = new Map([
+		[0, 2],
+		[1, 1],
+	]);
+	assert.equal(allPoolsFull(selections, requiredCounts), true);
+});
+
+test("allPoolsFull is false when a pool is over-selected relative to its required count", () => {
+	const selections = new Map([[0, new Map([["v1", { price: 1 }], ["v2", { price: 1 }], ["v3", { price: 1 }]])]]);
+	const requiredCounts = new Map([[0, 2]]);
+	assert.equal(allPoolsFull(selections, requiredCounts), false);
+});
+
+test("allPoolsFull is true for a single-pool box (the legacy shape) once it's full", () => {
+	const selections = new Map([[0, new Map([["v1", { price: 1 }], ["v2", { price: 1 }]])]]);
+	const requiredCounts = new Map([[0, 2]]);
+	assert.equal(allPoolsFull(selections, requiredCounts), true);
+});
+
+test("flattenSelections has one entry per selected variant across all pools", () => {
+	const selections = new Map([
+		[0, new Map([["v1", { price: 10 }], ["v2", { price: 12 }]])],
+		[1, new Map([["v3", { price: 8 }]])],
+	]);
+	const flat = flattenSelections(selections);
+	assert.equal(flat.size, 3);
+	assert.deepEqual([...flat.keys()].sort(), ["v1", "v2", "v3"]);
+	assert.deepEqual(flat.get("v3"), { price: 8 });
+});
+
+test("flattenSelections feeding buildAddToCartPayload produces one line per variant across pools", () => {
+	const selections = new Map([
+		[0, new Map([["v1", { price: 10 }], ["v2", { price: 12 }]])],
+		[1, new Map([["v3", { price: 8 }]])],
+	]);
+	const flat = flattenSelections(selections);
+	const payload = buildAddToCartPayload(flat, "bundle-abc", computeBundleTotal(flat), "coffee");
+	assert.equal(payload.items.length, 3);
+	assert.deepEqual(
+		payload.items.map((i) => i.id).sort(),
+		["v1", "v2", "v3"],
+	);
+	for (const item of payload.items) {
+		assert.equal(item.properties._bundle_box, "coffee");
+	}
 });
 
 test("buildBundleAddedBeacon serializes a strict bundle_added payload", () => {

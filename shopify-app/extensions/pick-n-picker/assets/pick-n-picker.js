@@ -33,6 +33,29 @@ export function shouldRunGuardrailCheck(selectionSize) {
 	return selectionSize >= 2;
 }
 
+// Multi-pool boxes (D7): selection state is Map<poolIndex,
+// Map<variantId, {price}>>. "Add Bundle" enables only when every pool's
+// selected size equals its required count — requiredCounts is
+// Map<poolIndex, count>, read from the block's data-boxcraft-pools JSON.
+export function allPoolsFull(selections, requiredCounts) {
+	for (const [poolIndex, count] of requiredCounts) {
+		const selectedSize = selections.get(poolIndex)?.size ?? 0;
+		if (selectedSize !== count) return false;
+	}
+	return true;
+}
+
+// Guardrail check and the add-to-cart payload never need to know about
+// pools — they operate on one flat variant-id list, exactly as before
+// pools existed.
+export function flattenSelections(selections) {
+	const flat = new Map();
+	for (const poolSelections of selections.values()) {
+		for (const [variantId, value] of poolSelections) flat.set(variantId, value);
+	}
+	return flat;
+}
+
 // T7: payload for the fire-and-forget "bundle_added" beacon (see
 // src/bundle-added-event.ts on the Guardrail Worker for the schema it's
 // validated against).
@@ -50,53 +73,70 @@ const DEBOUNCE_MS = 250;
 const CHECK_TIMEOUT_MS = 300;
 
 function initPicker(root) {
-	const pickCount = parseInt(root.dataset.pickCount, 10) || 1;
 	const guardrailUrl = root.dataset.guardrailUrl;
 	const shop = root.dataset.shop;
 	const boxHandle = root.dataset.box;
-	const items = Array.from(root.querySelectorAll("[data-boxcraft-item]"));
-	const counterEl = root.querySelector("[data-boxcraft-counter]");
 	const addButton = root.querySelector("[data-boxcraft-add-to-cart]");
 	const blockedEl = root.querySelector("[data-boxcraft-blocked]");
 
-	const selected = new Map(); // variantId -> { price }
+	// D6: one <script type="application/json"> per block, {index, count,
+	// collection_handle} per pool — avoids fragile multi-value
+	// data-attributes now that there can be more than one pool.
+	const poolsJson = root.querySelector("[data-boxcraft-pools]");
+	const poolsData = poolsJson ? JSON.parse(poolsJson.textContent) : [];
+	const requiredCounts = new Map(poolsData.map((p) => [p.index, p.count]));
+
+	const selections = new Map(); // poolIndex -> Map<variantId, { price }>
+	const poolCounters = new Map(); // poolIndex -> counter element
 	let debounceTimer = null;
 	// Fail-open by default: until a guardrail check actually runs (or when
 	// none is configured for this store), never block add-to-cart on it.
 	let compatible = true;
 
-	items.forEach((item) => {
-		item.addEventListener("click", () => toggleItem(item));
+	root.querySelectorAll("[data-boxcraft-pool]").forEach((section) => {
+		const poolIndex = Number(section.dataset.poolIndex);
+		selections.set(poolIndex, new Map());
+		poolCounters.set(poolIndex, section.querySelector("[data-boxcraft-counter]"));
+		section.querySelectorAll("[data-boxcraft-item]").forEach((item) => {
+			item.addEventListener("click", () => toggleItem(poolIndex, item));
+		});
 	});
 
 	addButton.addEventListener("click", addBundleToCart);
 
-	function toggleItem(item) {
+	function toggleItem(poolIndex, item) {
 		const variantId = item.dataset.variantId;
-		if (selected.has(variantId)) {
-			selected.delete(variantId);
+		const poolSelections = selections.get(poolIndex);
+		if (poolSelections.has(variantId)) {
+			poolSelections.delete(variantId);
 			item.setAttribute("aria-pressed", "false");
 			item.classList.remove("is-selected");
 		} else {
-			if (selected.size >= pickCount) return; // blocks a submit past N
-			selected.set(variantId, { price: parseFloat(item.dataset.variantPrice) || 0 });
+			if (poolSelections.size >= (requiredCounts.get(poolIndex) || 0)) return; // blocks a submit past N
+			poolSelections.set(variantId, { price: parseFloat(item.dataset.variantPrice) || 0 });
 			item.setAttribute("aria-pressed", "true");
 			item.classList.add("is-selected");
 		}
-		updateUI();
+		updateUI(poolIndex);
 		scheduleGuardrailCheck();
 	}
 
-	function updateUI() {
-		counterEl.textContent = `${selected.size} / ${pickCount} selected`;
-		addButton.disabled = selected.size !== pickCount || !compatible;
+	function updateUI(poolIndex) {
+		if (poolIndex !== undefined) {
+			const counterEl = poolCounters.get(poolIndex);
+			if (counterEl) {
+				counterEl.textContent = `${selections.get(poolIndex).size} / ${requiredCounts.get(poolIndex) || 0} selected`;
+			}
+		}
+		addButton.disabled = !allPoolsFull(selections, requiredCounts) || !compatible;
 	}
 
 	function scheduleGuardrailCheck() {
 		if (!guardrailUrl) return; // no guardrail configured for this store yet
 
 		clearTimeout(debounceTimer);
-		if (!shouldRunGuardrailCheck(selected.size)) {
+		const flatSize = flattenSelections(selections).size;
+		if (!shouldRunGuardrailCheck(flatSize)) {
 			setCompatible(true);
 			return;
 		}
@@ -105,7 +145,7 @@ function initPicker(root) {
 	}
 
 	async function runGuardrailCheck() {
-		const variantIds = Array.from(selected.keys());
+		const variantIds = Array.from(flattenSelections(selections).keys());
 		const controller = new AbortController();
 		const timeout = setTimeout(() => controller.abort(), CHECK_TIMEOUT_MS);
 
@@ -140,11 +180,12 @@ function initPicker(root) {
 	}
 
 	async function addBundleToCart() {
-		if (selected.size !== pickCount || !compatible) return;
+		if (!allPoolsFull(selections, requiredCounts) || !compatible) return;
 
+		const flat = flattenSelections(selections);
 		const bundleId = crypto.randomUUID(); // fresh per bundle instance, not per product
-		const totalPrice = computeBundleTotal(selected);
-		const payload = buildAddToCartPayload(selected, bundleId, totalPrice, boxHandle);
+		const totalPrice = computeBundleTotal(flat);
+		const payload = buildAddToCartPayload(flat, bundleId, totalPrice, boxHandle);
 
 		addButton.disabled = true;
 		addButton.textContent = "Adding...";
@@ -157,7 +198,7 @@ function initPicker(root) {
 			});
 			if (!res.ok) throw new Error(`add to cart failed: ${res.status}`);
 			addButton.textContent = "Added!";
-			sendBundleAddedBeacon(selected.size, totalPrice);
+			sendBundleAddedBeacon(flat.size, totalPrice);
 			document.dispatchEvent(
 				new CustomEvent("boxcraft:bundle-added", { detail: { bundleId } }),
 			);

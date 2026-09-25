@@ -1,0 +1,50 @@
+{% comment %}
+  Multi-pool boxes (D6): one pool's picker section — its own heading (the
+  pool's collection title), item grid, and "x / count selected" counter.
+  Shared by every pool a box defines and by the single-pool block-setting
+  fallback (rendered once, as pool_index 0), so there's one place that
+  renders a pool's markup.
+
+  Params: collection (a Shopify collection object, or blank), count
+  (integer, required picks from this pool), pool_index (integer, 0-based).
+{% endcomment %}
+<section class="boxcraft-picker__pool" data-boxcraft-pool data-pool-index="{{ pool_index }}">
+  {% if collection.title %}
+    <h4 class="boxcraft-picker__pool-title">{{ collection.title }}</h4>
+  {% endif %}
+  <p class="boxcraft-picker__counter" data-boxcraft-counter>
+    0 / {{ count }} selected
+  </p>
+  <div class="boxcraft-picker__grid" data-boxcraft-grid>
+    {% if collection != blank %}
+      {% for product in collection.products %}
+        {% for variant in product.variants %}
+          <button
+            type="button"
+            class="boxcraft-picker__item"
+            data-boxcraft-item
+            data-pool-index="{{ pool_index }}"
+            data-variant-id="{{ variant.id }}"
+            data-variant-price="{{ variant.price | divided_by: 100.0 }}"
+            aria-pressed="false"
+          >
+            {%- assign item_image = variant.image | default: product.featured_image -%}
+            {% if item_image %}
+              <img
+                src="{{ item_image | image_url: width: 200 }}"
+                alt="{{ variant.title }}"
+                loading="lazy"
+                width="100"
+                height="100"
+              >
+            {% endif %}
+            <span class="boxcraft-picker__item-title">
+              {{ product.title }}{% if variant.title != "Default Title" %} — {{ variant.title }}{% endif %}
+            </span>
+            <span class="boxcraft-picker__item-price">{{ variant.price | money }}</span>
+          </button>
+        {% endfor %}
+      {% endfor %}
+    {% endif %}
+  </div>
+</section>
