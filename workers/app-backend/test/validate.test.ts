@@ -4,6 +4,7 @@ import {
 	isValidHandle,
 	isValidPickCount,
 	isValidDiscount,
+	validatePools,
 	validateBoxInput,
 	validateConfigInput,
 	toBox,
@@ -98,23 +99,72 @@ test("isValidDiscount rejects an unknown type or non-object", () => {
 	assert.equal(isValidDiscount("none"), false);
 });
 
+test("validatePools accepts a well-formed single pool", () => {
+	assert.deepEqual(validatePools([{ collection_handle: "flavors", count: 4 }]), { valid: true, errors: [] });
+});
+
+test("validatePools accepts a well-formed multi-pool box", () => {
+	assert.deepEqual(
+		validatePools([
+			{ collection_handle: "light-roast", count: 2 },
+			{ collection_handle: "medium-roast", count: 1 },
+		]),
+		{ valid: true, errors: [] },
+	);
+});
+
+test("validatePools rejects an empty array", () => {
+	assert.equal(validatePools([]).valid, false);
+});
+
+test("validatePools rejects a non-array", () => {
+	assert.equal(validatePools(undefined).valid, false);
+	assert.equal(validatePools("nope").valid, false);
+});
+
+test("validatePools rejects more than 5 pools", () => {
+	const pools = Array.from({ length: 6 }, (_, i) => ({ collection_handle: `c${i}`, count: 1 }));
+	assert.equal(validatePools(pools).valid, false);
+});
+
+test("validatePools rejects a count out of range (0 or 21)", () => {
+	assert.equal(validatePools([{ collection_handle: "a", count: 0 }]).valid, false);
+	assert.equal(validatePools([{ collection_handle: "a", count: 21 }]).valid, false);
+});
+
+test("validatePools rejects a total count over 20 even with each pool individually valid", () => {
+	const result = validatePools([
+		{ collection_handle: "a", count: 15 },
+		{ collection_handle: "b", count: 10 },
+	]);
+	assert.equal(result.valid, false);
+	assert.ok(result.errors.some((e) => e.includes("total count")));
+});
+
+test("validatePools rejects a non-string or empty collection_handle", () => {
+	assert.equal(validatePools([{ collection_handle: 5, count: 4 }]).valid, false);
+	assert.equal(validatePools([{ collection_handle: "", count: 4 }]).valid, false);
+	assert.equal(validatePools([{ collection_handle: "  ", count: 4 }]).valid, false);
+});
+
 test("validateBoxInput accepts a well-formed box", () => {
 	const result = validateBoxInput({
 		handle: "default",
 		title: "Build your box",
-		collection_handle: "flavors",
-		pick_count: 4,
+		pools: [{ collection_handle: "flavors", count: 4 }],
 		discount: { type: "none" },
 	});
 	assert.deepEqual(result, { valid: true, errors: [] });
 });
 
-test("validateBoxInput accepts a null collection_handle", () => {
+test("validateBoxInput accepts a multi-pool box", () => {
 	const result = validateBoxInput({
 		handle: "default",
 		title: "Build your box",
-		collection_handle: null,
-		pick_count: 4,
+		pools: [
+			{ collection_handle: "light-roast", count: 2 },
+			{ collection_handle: "medium-roast", count: 1 },
+		],
 		discount: { type: "none" },
 	});
 	assert.equal(result.valid, true);
@@ -124,20 +174,36 @@ test("validateBoxInput collects every field error, not just the first", () => {
 	const result = validateBoxInput({
 		handle: "NOT VALID",
 		title: "",
-		collection_handle: 5,
-		pick_count: 0,
+		pools: [],
 		discount: { type: "bogus" },
 	});
 	assert.equal(result.valid, false);
-	assert.equal(result.errors.length, 5);
+	assert.equal(result.errors.length, 4);
+});
+
+test("toBox derives collection_handle from pools[0] and pick_count from the sum of pool counts", () => {
+	const box = toBox({
+		handle: "default",
+		title: "Build your box",
+		pools: [
+			{ collection_handle: "light-roast", count: 2 },
+			{ collection_handle: "medium-roast", count: 1 },
+		],
+		discount: { type: "none" },
+	});
+	assert.equal(box.collection_handle, "light-roast");
+	assert.equal(box.pick_count, 3);
+	assert.deepEqual(box.pools, [
+		{ collection_handle: "light-roast", count: 2 },
+		{ collection_handle: "medium-roast", count: 1 },
+	]);
 });
 
 test("toBox defaults active to true unless explicitly false", () => {
 	const box = toBox({
 		handle: "default",
 		title: "Build your box",
-		collection_handle: null,
-		pick_count: 4,
+		pools: [{ collection_handle: "flavors", count: 4 }],
 		discount: { type: "none" },
 	});
 	assert.equal(box.active, true);

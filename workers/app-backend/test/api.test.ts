@@ -282,8 +282,7 @@ test("POST /api/boxes creates a box, syncs metafields, and GET /api/boxes lists 
 	const newBox = {
 		handle: "coffee",
 		title: "Coffee Box",
-		collection_handle: "coffee",
-		pick_count: 6,
+		pools: [{ collection_handle: "coffee", count: 6 }],
 		discount: { type: "percent", percent: 10 },
 	};
 
@@ -329,7 +328,7 @@ test("POST /api/boxes with invalid input returns 400 and never reaches the metaf
 
 test("PUT /api/boxes/:handle updates in place, URL handle wins over any conflicting body value", async () => {
 	const env = baseEnv();
-	const box = { title: "V1", collection_handle: null, pick_count: 4, discount: { type: "none" } };
+	const box = { title: "V1", pools: [{ collection_handle: "flavors", count: 4 }], discount: { type: "none" } };
 
 	await withMockedFetch(metafieldSuccessFetch, async () => {
 		await handleApi(
@@ -360,7 +359,7 @@ test("DELETE /api/boxes/:handle removes it", async () => {
 		await handleApi(
 			request("/api/boxes", {
 				method: "POST",
-				body: JSON.stringify({ handle: "temp", title: "T", collection_handle: null, pick_count: 4, discount: { type: "none" } }),
+				body: JSON.stringify({ handle: "temp", title: "T", pools: [{ collection_handle: "flavors", count: 4 }], discount: { type: "none" } }),
 			}),
 			new URL("https://x/api/boxes"),
 			env,
@@ -388,7 +387,12 @@ test("a metafield sync failure still keeps the D1 write, reported as 207", async
 			const res = await handleApi(
 				request("/api/boxes", {
 					method: "POST",
-					body: JSON.stringify({ handle: "default", title: "T", collection_handle: null, pick_count: 4, discount: { type: "none" } }),
+					body: JSON.stringify({
+						handle: "default",
+						title: "T",
+						pools: [{ collection_handle: "flavors", count: 4 }],
+						discount: { type: "none" },
+					}),
 				}),
 				new URL("https://x/api/boxes"),
 				env,
